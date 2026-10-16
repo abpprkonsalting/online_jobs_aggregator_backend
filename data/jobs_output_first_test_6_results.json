@@ -1,0 +1,697 @@
+{
+  "jobs": [
+    {
+      "id": "e4a43241-3594-41c7-98cd-5c58cfa88f23",
+      "source_id": "66712894880182",
+      "obfuscated_id": 33165402,
+      "title": "Quantitative Trader: Equity Quantitative Research - Intern (US)",
+      "organization": "Citadel",
+      "job_url": "https://www.wayup.com/i-Financial-Services-j-Quantitative-Trader-Equity-Quantitative-Research-Intern-US-Citadel-66712894880182/",
+      "employment_type": null,
+      "date_posted": "2026-07-17T00:07:29.973391Z",
+      "locations_derived": [
+        "CT, US",
+        "CT, USA",
+        "FL, US",
+        "FL, USA",
+        "Greenwich, CT, US",
+        "Greenwich, CT, USA",
+        "Miami, FL, US",
+        "Miami, FL, USA",
+        "NY, US",
+        "NY, USA",
+        "New York, NY, US",
+        "New York, NY, USA",
+        "US",
+        "USA"
+      ],
+      "cities_derived": null,
+      "countries_derived": null,
+      "remote_derived": false,
+      "company_id": "c33b0736-4ea9-be5c-a488-0f931f754df2",
+      "company_image_id": "d3znuxps84tasbbq1ucs",
+      "logo": "",
+      "salary_currency": "USD",
+      "salary_min_value": 4500,
+      "salary_max_value": 5800,
+      "salary_unit_text": "weekly",
+      "ai_salary_currency": "USD",
+      "ai_salary_min_value": 4500,
+      "ai_salary_max_value": 5800,
+      "ai_salary_unit_text": "weekly",
+      "ai_key_skills": [
+        "statistics",
+        "computer science",
+        "economic principles",
+        "game theory",
+        "decision theory",
+        "optimization",
+        "risk management",
+        "Python",
+        "SQL",
+        "AWS"
+      ],
+      "experience_level": "",
+      "work_arrangement": "",
+      "description_text": "**Job Description**\n\nEquity Quantitative Research (EQR) seeks to capitalize on market inefficiencies identified through a combination of structural analysis, leading-edge quantitative research and technology. The team trades billions of dollars a day by applying statistics, computer science and economic principles.\n\nEQR manages several systematic and semi-systematic equities strategies in addition to equities trading. Every investment idea or trade requires an understanding of market flows, sophisticated mathematics and large-scale data analysis.\n\n**The Role**\n\nAs a Quantitative Trader your core mandate is to optimize trading strategies to maximize profitability. You will decide how capital is allocated and risk is deployed across signals and strategies, tuning the portfolio so that every unit of risk earns as much as possible. You will work side by side with quantitative researchers and engineers to translate research into production strategies that trade real capital - by working to improve the optimizer, model and minimize trading costs and market impact, and manage capacity and financing.\n\nYou will own portfolio-level risk as a first line of defense - reasoning about exposures, intervening tactically as conditions change, and doing research and statistical analysis to continuously push the portfolio's risk-adjusted returns higher. This is a high-ownership seat where you make decisions under time constraints, mentored by leaders who have realized PnL at scale.\n\n**Your Objectives:**\n\n* Partner with quantitative researchers and engineers to turn research into production trading strategies.\n* Conduct research to find where the portfolio is leaving money on the table and to generate additional returns from existing strategies.\n* Manage portfolio-level risk and exposures in real time, adapting allocation as market conditions change to protect and grow PnL.\n* Continuously monitor strategy performance, diagnose issues, and iterate to keep strategies performing across market regimes.\n\n**Your Skills & Talents:**\n\n* A strong interest in game theory, decision theory, and strategy games, and the instinct to apply them to markets.\n* Effective problem-solving skills and the rigor to reason about optimization, risk, and profitability from first principles - with the judgment to know where the next dollar of PnL comes from.\n* Excellent written and verbal communication skills.\n* A self-starter who is not afraid to question the status quo.\n* A degree from a top university in a quantitative field such as statistics, mathematics, computer science, or physics - strong candidates often bring graduate research or competition experience.\n\n**Why Join Us:**\n\n* Direct ownership: your decisions trade real capital, and you see their impact immediately.\n* Small, flat teams with no layers between your idea and production.\n* Best-in-class data, compute, and engineering support, backed by the scale of Citadel's platform.\n* A culture of intellectual rigor where the best idea wins, always.\n* Learn directly from senior practitioners with deep research-to-production track records, who invest in developing the next generation of quantitative talent.\n\nOpportunities may be available from time to time in any location in which the business is based for suitable candidates. If you are interested in a career with Citadel, please share your details and we will contact you if there is a vacancy available.\n\nIn addition to weekly pay, interns may be eligible for a highly competitive sign-on bonus, housing stipend or covered living accommodations, company-sponsored travel, and a variety of on-site benefits, including access to on-site fitness and wellness amenities, catered meals, and social and networking events.\n\nIn accordance with applicable law, the base salary range for this role is $4,500 to $5,800 per week.\n\n**About Citadel**\n\nCitadel is one of the world's leading alternative investment managers. We manage capital on behalf of many of the world's preeminent private, public and nonprofit institutions. We seek the highest and best use of investor capital in order to deliver market leading results and contribute to broader economic growth. For over 30 years, Citadel has cultivated a culture of learning and collaboration among some of the most talented and accomplished investment professionals, researchers and engineers in the world. Our colleagues are empowered to test their ideas and develop commercial solutions that accelerate their growth and drive real impact.\n",
+      "frontend_payload": {
+        "about_company": [
+          "Citadel is one of the world's leading alternative investment managers.",
+          "Manages capital on behalf of many of the world's preeminent private, public and nonprofit institutions.",
+          "Seeks the highest and best use of investor capital to deliver market leading results and contribute to broader economic growth.",
+          "Cultivated a culture of learning and collaboration among some of the most talented and accomplished investment professionals, researchers and engineers in the world.",
+          "Colleagues are empowered to test their ideas and develop commercial solutions that accelerate their growth and drive real impact."
+        ],
+        "about_role": "As a Quantitative Trader, your core mandate is to optimize trading strategies to maximize profitability. You will decide how capital is allocated and risk is deployed across signals and strategies, tuning the portfolio so that every unit of risk earns as much as possible. You will work side by side with quantitative researchers and engineers to translate research into production strategies that trade real capital.",
+        "annual_salary": [
+          "$234,000 to $301,600 per year (based on $4,500 to $5,800 per week)"
+        ],
+        "benefits": [
+          "Weekly pay",
+          "Highly competitive sign-on bonus",
+          "Housing stipend or covered living accommodations",
+          "Company-sponsored travel",
+          "On-site fitness and wellness amenities",
+          "Catered meals",
+          "Social and networking events"
+        ],
+        "education_level": [
+          "Degree from a top university in a quantitative field such as statistics, mathematics, computer science, or physics",
+          "Graduate research or competition experience"
+        ],
+        "equal_opportunity": [],
+        "experience_level": [
+          "Mentored by leaders who have realized PnL at scale",
+          "Senior practitioners"
+        ],
+        "location": [
+          "Various locations"
+        ],
+        "requirements": [
+          "A strong interest in game theory, decision theory, and strategy games, and the instinct to apply them to markets.",
+          "Effective problem-solving skills and the rigor to reason about optimization, risk, and profitability from first principles.",
+          "Excellent written and verbal communication skills.",
+          "A self-starter who is not afraid to question the status quo."
+        ],
+        "responsibilities": [
+          "Partner with quantitative researchers and engineers to turn research into production trading strategies.",
+          "Conduct research to find where the portfolio is leaving money on the table and to generate additional returns from existing strategies.",
+          "Manage portfolio-level risk and exposures in real time, adapting allocation as market conditions change to protect and grow PnL.",
+          "Continuously monitor strategy performance, diagnose issues, and iterate to keep strategies performing across market regimes."
+        ],
+        "skills": [
+          "Optimization",
+          "Risk management",
+          "Profitability analysis",
+          "Statistical analysis",
+          "Market impact minimization",
+          "Capacity management",
+          "Financing"
+        ],
+        "work_type": [
+          "Full-time"
+        ]
+      }
+    },
+    {
+      "id": "98fe1915-dc43-42c1-940f-612f8cbfd86e",
+      "source_id": "872499297666818",
+      "obfuscated_id": 33165400,
+      "title": "Quantitative Research Analyst - Intern (US)",
+      "organization": "Citadel",
+      "job_url": "https://www.wayup.com/i-Financial-Services-j-Quantitative-Research-Analyst-Intern-US-Citadel-872499297666818/",
+      "employment_type": null,
+      "date_posted": "2026-07-17T00:07:29.491852Z",
+      "locations_derived": [
+        "CT, US",
+        "CT, USA",
+        "FL, US",
+        "FL, USA",
+        "Greenwich, CT, US",
+        "Greenwich, CT, USA",
+        "Miami, FL, US",
+        "Miami, FL, USA",
+        "NY, US",
+        "NY, USA",
+        "New York, NY, US",
+        "New York, NY, USA",
+        "US",
+        "USA"
+      ],
+      "cities_derived": null,
+      "countries_derived": null,
+      "remote_derived": false,
+      "company_id": "c33b0736-4ea9-be5c-a488-0f931f754df2",
+      "company_image_id": "d3znuxps84tasbbq1ucs",
+      "logo": "",
+      "salary_currency": "USD",
+      "salary_min_value": 4500,
+      "salary_max_value": 5800,
+      "salary_unit_text": "weekly",
+      "ai_salary_currency": "USD",
+      "ai_salary_min_value": 4500,
+      "ai_salary_max_value": 5800,
+      "ai_salary_unit_text": "weekly",
+      "ai_key_skills": [
+        "Python",
+        "R",
+        "C++",
+        "machine learning",
+        "time-series analysis",
+        "pattern recognition",
+        "NLP"
+      ],
+      "experience_level": "",
+      "work_arrangement": "",
+      "description_text": "**Job Description**\n\nOur mission is to be the most successful investment team in the world. Quantitative Researcher Analysts play a key role in this mission by developing next-generation models and trading approaches for a range of investment strategies. You'll get to challenge the impossible in quantitative research by applying sophisticated and complex statistical techniques to financial markets, some of the most complex data sets in the world.\n\nAs an intern, you'll dive into research through an 11-week program that will allow you to collaborate and connect with senior team members. In addition, you'll get the opportunity to network and socialize with peers throughout the internship.\n\nOur signature internship program takes place June through August. Occasionally, we can be flexible to other times of the year. You will be able to indicate your timing preference in the application.\n\n**Your Objectives**\n\n* Conceptualize valuation strategies, develop, and continuously improve upon mathematical models and help translate algorithms into code\n* Back test and implement trading models and signals in a live trading environment\n* Use unconventional data sources to drive innovation\n* Conduct research and statistical analysis to build and refine monetization systems for trading signals\n\n**Your Skills & Talents**\n\n* Bachelor's or master's degree in mathematics, statistics, physics, computer science, or another highly quantitative field\n* Strong knowledge of probability and statistics (e.g., machine learning, time-series analysis, pattern recognition, NLP)\n* Prior experience working in a data driven research environment\n* Experience with translating mathematical models and algorithms into code (Python, R or C++)\n* Independent research experience\n* Ability to manage multiple tasks and thrive in a fast-paced team environment\n* Excellent analytical skills, with strong attention to detail\n* Strong written and verbal communication skills\n\nOpportunities available in New York, Greenwich, and Miami.\n\nIn addition to weekly pay, interns may be eligible for a highly competitive sign-on bonus, housing stipend or covered living accommodations, company-sponsored travel, and a variety of on-site benefits, including access to on-site fitness and wellness amenities, catered meals, and social and networking events.\n\nIn accordance with applicable law, the base salary range for this role is $4,500 to $5,800 per week.\n\n**About Citadel**\n\nCitadel is one of the world's leading alternative investment managers. We manage capital on behalf of many of the world's preeminent private, public and nonprofit institutions. We seek the highest and best use of investor capital in order to deliver market leading results and contribute to broader economic growth. For over 30 years, Citadel has cultivated a culture of learning and collaboration among some of the most talented and accomplished investment professionals, researchers and engineers in the world. Our colleagues are empowered to test their ideas and develop commercial solutions that accelerate their growth and drive real impact.\n",
+      "frontend_payload": {
+        "about_company": [
+          "Citadel is one of the world's leading alternative investment managers, managing capital for prominent institutions.",
+          "The company seeks the highest and best use of investor capital to deliver market-leading results and contribute to economic growth.",
+          "Citadel has fostered a culture of learning and collaboration for over 30 years, empowering colleagues to develop commercial solutions and drive impact."
+        ],
+        "about_role": "Quantitative Researcher Analysts develop next-generation models and trading approaches for a range of investment strategies, applying sophisticated statistical techniques to financial markets. The internship program offers an 11-week immersive research experience with opportunities for collaboration, networking, and professional development.",
+        "annual_salary": [
+          "$234,000 to $301,600 per year (based on $4,500 to $5,800 per week)"
+        ],
+        "benefits": [
+          "Highly competitive sign-on bonus",
+          "Housing stipend or covered living accommodations",
+          "Company-sponsored travel",
+          "On-site fitness and wellness amenities",
+          "Catered meals",
+          "Social and networking events"
+        ],
+        "education_level": [
+          "Bachelor's degree in mathematics, statistics, physics, computer science, or another highly quantitative field",
+          "Master's degree in mathematics, statistics, physics, computer science, or another highly quantitative field"
+        ],
+        "equal_opportunity": [],
+        "experience_level": [
+          "Intern"
+        ],
+        "location": [
+          "New York",
+          "Greenwich",
+          "Miami"
+        ],
+        "requirements": [
+          "Prior experience working in a data driven research environment",
+          "Experience with translating mathematical models and algorithms into code (Python, R or C++)",
+          "Independent research experience",
+          "Ability to manage multiple tasks and thrive in a fast-paced team environment",
+          "Excellent analytical skills, with strong attention to detail",
+          "Strong written and verbal communication skills"
+        ],
+        "responsibilities": [
+          "Conceptualize valuation strategies, develop, and continuously improve upon mathematical models and help translate algorithms into code",
+          "Back test and implement trading models and signals in a live trading environment",
+          "Use unconventional data sources to drive innovation",
+          "Conduct research and statistical analysis to build and refine monetization systems for trading signals"
+        ],
+        "skills": [
+          "Mathematics",
+          "Statistics",
+          "Physics",
+          "Computer Science",
+          "Machine learning",
+          "Time-series analysis",
+          "Pattern recognition",
+          "NLP",
+          "Python",
+          "R",
+          "C++"
+        ],
+        "work_type": [
+          "Internship",
+          "Full-time"
+        ]
+      }
+    },
+    {
+      "id": "061825e9-0668-41f8-a95a-046ae7483d5a",
+      "source_id": "519691432094859",
+      "obfuscated_id": 33165392,
+      "title": "Software Engineer - Intern (US)",
+      "organization": "Citadel",
+      "job_url": "https://www.wayup.com/i-Financial-Services-j-Software-Engineer-Intern-US-Citadel-519691432094859/",
+      "employment_type": null,
+      "date_posted": "2026-07-17T00:07:28.835756Z",
+      "locations_derived": [
+        "CT, US",
+        "CT, USA",
+        "FL, US",
+        "FL, USA",
+        "Greenwich, CT, US",
+        "Greenwich, CT, USA",
+        "Houston, TX, US",
+        "Houston, TX, USA",
+        "Miami, FL, US",
+        "Miami, FL, USA",
+        "NY, US",
+        "NY, USA",
+        "New York, NY, US",
+        "New York, NY, USA",
+        "TX, US",
+        "TX, USA",
+        "US",
+        "USA"
+      ],
+      "cities_derived": null,
+      "countries_derived": null,
+      "remote_derived": false,
+      "company_id": "c33b0736-4ea9-be5c-a488-0f931f754df2",
+      "company_image_id": "d3znuxps84tasbbq1ucs",
+      "logo": "",
+      "salary_currency": "USD",
+      "salary_min_value": 4500,
+      "salary_max_value": 5800,
+      "salary_unit_text": "weekly",
+      "ai_salary_currency": "USD",
+      "ai_salary_min_value": 4500,
+      "ai_salary_max_value": 5800,
+      "ai_salary_unit_text": "weekly",
+      "ai_key_skills": [
+        "computer science",
+        "computer engineering",
+        "probability",
+        "statistics"
+      ],
+      "experience_level": "",
+      "work_arrangement": "",
+      "description_text": "**Job Description**\n\nAt Citadel, our engineers work in small teams to turn the best ideas into high-performing and resilient technology. With short development cycles, work rapidly goes into production. As an engineer, you can create system architectures, develop platforms and build web frameworks. You'll have access to state-of-the-art tools and apply innovative techniques including distributed computing, natural language processing, machine learning and more.\n\nAs an intern, you'll get to challenge the impossible in technology through an 11-week program that will allow you to collaborate and connect with senior team members. In addition, you'll get the opportunity to network and socialize with peers throughout the internship.\n\n**Your Objectives:**\n\n* Create technological tools that bring trading strategies to life\n* Develop high-performance, large data research platforms\n* Work in small teams to build the future of finance\n\n**Your Skills & Talents:**\n\n* Bachelor's, master's or PhD in computer science, computer engineering or related fields\n* Exceptional programming and design skills\n* Strong analytical skills and familiarity with probability and statistics\n* Ability to communicate effectively in a collaborative, complex and highly technical team environment\n* Intellectual curiosity and passion for solving challenging problems using technology\n\nOpportunities available in New York, Miami, Greenwich, and Houston.\n\nIn addition to weekly pay, interns may be eligible for a highly competitive sign-on bonus, housing stipend or covered living accommodations, company-sponsored travel, and a variety of on-site benefits, including access to on-site fitness and wellness amenities, catered meals, and social and networking events.\n\nIn accordance with applicable law, the base salary range for this role is $4,500 to $5,800 per week.\n\n**About Citadel**\n\nCitadel is one of the world's leading alternative investment managers. We manage capital on behalf of many of the world's preeminent private, public and nonprofit institutions. We seek the highest and best use of investor capital in order to deliver market leading results and contribute to broader economic growth. For over 30 years, Citadel has cultivated a culture of learning and collaboration among some of the most talented and accomplished investment professionals, researchers and engineers in the world. Our colleagues are empowered to test their ideas and develop commercial solutions that accelerate their growth and drive real impact.\n",
+      "frontend_payload": {
+        "about_company": [
+          "Citadel is one of the world's leading alternative investment managers.",
+          "We manage capital on behalf of many of the world's preeminent private, public and nonprofit institutions.",
+          "We seek the highest and best use of investor capital in order to deliver market leading results and contribute to broader economic growth.",
+          "For over 30 years, Citadel has cultivated a culture of learning and collaboration among some of the most talented and accomplished investment professionals, researchers and engineers in the world.",
+          "Our colleagues are empowered to test their ideas and develop commercial solutions that accelerate their growth and drive real impact."
+        ],
+        "about_role": "As an intern, you'll get to challenge the impossible in technology through an 11-week program that will allow you to collaborate and connect with senior team members. In addition, you'll get the opportunity to network and socialize with peers throughout the internship.",
+        "annual_salary": [
+          "$4,500 to $5,800 per week"
+        ],
+        "benefits": [
+          "Weekly pay",
+          "Highly competitive sign-on bonus",
+          "Housing stipend or covered living accommodations",
+          "Company-sponsored travel",
+          "Access to on-site fitness and wellness amenities",
+          "Catered meals",
+          "Social and networking events"
+        ],
+        "education_level": [
+          "Bachelor's, master's or PhD in computer science, computer engineering or related fields"
+        ],
+        "equal_opportunity": [],
+        "experience_level": [
+          "Intern"
+        ],
+        "location": [
+          "New York",
+          "Miami",
+          "Greenwich",
+          "Houston"
+        ],
+        "requirements": [
+          "Exceptional programming and design skills",
+          "Strong analytical skills and familiarity with probability and statistics",
+          "Ability to communicate effectively in a collaborative, complex and highly technical team environment",
+          "Intellectual curiosity and passion for solving challenging problems using technology"
+        ],
+        "responsibilities": [
+          "Create technological tools that bring trading strategies to life",
+          "Develop high-performance, large data research platforms",
+          "Work in small teams to build the future of finance"
+        ],
+        "skills": [],
+        "work_type": [
+          "Internship"
+        ]
+      }
+    },
+    {
+      "id": "4928c338-147b-4b56-8f4b-a6cd5735e6e0",
+      "source_id": "779922045750282",
+      "obfuscated_id": 33165391,
+      "title": "Quantitative Research Engineer - PhD Intern (US)",
+      "organization": "Citadel",
+      "job_url": "https://www.wayup.com/i-Financial-Services-j-Quantitative-Research-Engineer-PhD-Intern-US-Citadel-779922045750282/",
+      "employment_type": null,
+      "date_posted": "2026-07-17T00:07:28.587065Z",
+      "locations_derived": [
+        "CT, US",
+        "CT, USA",
+        "FL, US",
+        "FL, USA",
+        "Greenwich, CT, US",
+        "Greenwich, CT, USA",
+        "Houston, TX, US",
+        "Houston, TX, USA",
+        "Miami, FL, US",
+        "Miami, FL, USA",
+        "NY, US",
+        "NY, USA",
+        "New York, NY, US",
+        "New York, NY, USA",
+        "TX, US",
+        "TX, USA",
+        "US",
+        "USA"
+      ],
+      "cities_derived": null,
+      "countries_derived": null,
+      "remote_derived": false,
+      "company_id": "c33b0736-4ea9-be5c-a488-0f931f754df2",
+      "company_image_id": "d3znuxps84tasbbq1ucs",
+      "logo": "",
+      "salary_currency": "USD",
+      "salary_min_value": 4500,
+      "salary_max_value": 5800,
+      "salary_unit_text": "weekly",
+      "ai_salary_currency": "USD",
+      "ai_salary_min_value": 4500,
+      "ai_salary_max_value": 5800,
+      "ai_salary_unit_text": "weekly",
+      "ai_key_skills": [
+        "C++",
+        "Python",
+        "R",
+        "Distributed Computing",
+        "Natural Language Processing",
+        "Machine Learning",
+        "Platform Development",
+        "Networking",
+        "System Design",
+        "Web Development"
+      ],
+      "experience_level": "",
+      "work_arrangement": "",
+      "description_text": "**Job Description**\n\nAt Citadel, Quantitative Research Engineers work closely with Quantitative Researchers to develop and implement automated trading system software solutions. These solutions utilize advanced statistical and quantitative techniques to tackle complex financial challenges. We seek candidates with a proven track record of excellence in their field and a strong desire to apply their advanced software engineering skills to systematic investing.\n\nAs an intern, you'll get to challenge the impossible in research through an 11 week program that will allow you to collaborate and connect with senior team members. In addition, you'll get the opportunity to network and socialize with peers throughout the internship.\n\nOur signature internship program takes place June through August. Occasionally, we can be flexible to other times of the year. You will be able to indicate your timing preference in the application.\n\n**Your Objectives**\n\n* Design, develop, test, and deploy elegant software solutions for automated trading systems\n* Partner with the Quantitative Research team to define priorities and deliver custom software solutions\n\n**Your Skills & Talents**\n\n* PhD degree in computer science, mathematics, statistics, physics, or another highly quantitative field\n* Strong programming skills with proficiency in one or more programming languages, including C++, Python, and R\n* A deep passion for technology, software development, and mathematics\n* Strong computer science fundamentals and software development experience\n* Experience with some of the following areas: Distributed Computing, Natural Language Processing, Machine Learning, Platform Development, Networking, System Design, and/or Web Development\n* Proven track record of creatively solving problems by understanding and prioritizing business value and applying technology solutions\n* Strong written and verbal communications skills\n\nOpportunities available in New York, Miami, Greenwich, and Houston.\n\nIn accordance with applicable law, the base salary range for this role is $4,500 to $5,800 per week.\n\n**About Citadel**\n\nCitadel is one of the world's leading alternative investment managers. We manage capital on behalf of many of the world's preeminent private, public and nonprofit institutions. We seek the highest and best use of investor capital in order to deliver market leading results and contribute to broader economic growth. For over 30 years, Citadel has cultivated a culture of learning and collaboration among some of the most talented and accomplished investment professionals, researchers and engineers in the world. Our colleagues are empowered to test their ideas and develop commercial solutions that accelerate their growth and drive real impact.\n",
+      "frontend_payload": {
+        "about_company": [
+          "Citadel is one of the world's leading alternative investment managers.",
+          "Manages capital on behalf of preeminent private, public and nonprofit institutions.",
+          "Seeks the highest and best use of investor capital to deliver market leading results and contribute to broader economic growth.",
+          "Cultivated a culture of learning and collaboration for over 30 years.",
+          "Colleagues are empowered to test ideas and develop commercial solutions that accelerate growth and drive real impact."
+        ],
+        "about_role": "Quantitative Research Engineers at Citadel collaborate with Quantitative Researchers to build and implement automated trading system software solutions using advanced statistical and quantitative techniques. This internship program offers an 11-week immersive experience to challenge research boundaries, connect with senior team members, and network with peers.",
+        "annual_salary": [
+          "$4,500 to $5,800 per week"
+        ],
+        "benefits": [
+          "11 week program",
+          "Opportunity to collaborate and connect with senior team members",
+          "Opportunity to network and socialize with peers"
+        ],
+        "education_level": [
+          "PhD"
+        ],
+        "equal_opportunity": [],
+        "experience_level": [
+          "Intern"
+        ],
+        "location": [
+          "New York",
+          "Miami",
+          "Greenwich",
+          "Houston"
+        ],
+        "requirements": [
+          "PhD degree in computer science, mathematics, statistics, physics, or another highly quantitative field",
+          "Strong programming skills with proficiency in one or more programming languages, including C++, Python, and R",
+          "A deep passion for technology, software development, and mathematics",
+          "Strong computer science fundamentals and software development experience",
+          "Experience with some of the following areas: Distributed Computing, Natural Language Processing, Machine Learning, Platform Development, Networking, System Design, and/or Web Development",
+          "Proven track record of creatively solving problems by understanding and prioritizing business value and applying technology solutions",
+          "Strong written and verbal communications skills"
+        ],
+        "responsibilities": [
+          "Design, develop, test, and deploy software solutions for automated trading systems",
+          "Partner with the Quantitative Research team to define priorities and deliver custom software solutions"
+        ],
+        "skills": [
+          "C++",
+          "Python",
+          "R",
+          "Distributed Computing",
+          "Natural Language Processing",
+          "Machine Learning",
+          "Platform Development",
+          "Networking",
+          "System Design",
+          "Web Development"
+        ],
+        "work_type": [
+          "Internship",
+          "Full-time"
+        ]
+      }
+    },
+    {
+      "id": "5010d966-b219-4c8d-b8ca-40b18ea1a0c9",
+      "source_id": "73564446216976",
+      "obfuscated_id": 33165390,
+      "title": "Machine Learning Researcher - PhD Intern (US)",
+      "organization": "Citadel",
+      "job_url": "https://www.wayup.com/i-Financial-Services-j-Machine-Learning-Researcher-PhD-Intern-US-Citadel-73564446216976/",
+      "employment_type": null,
+      "date_posted": "2026-07-17T00:07:28.506727Z",
+      "locations_derived": [
+        "CT, US",
+        "CT, USA",
+        "FL, US",
+        "FL, USA",
+        "Greenwich, CT, US",
+        "Greenwich, CT, USA",
+        "Houston, TX, US",
+        "Houston, TX, USA",
+        "Miami, FL, US",
+        "Miami, FL, USA",
+        "NY, US",
+        "NY, USA",
+        "New York, NY, US",
+        "New York, NY, USA",
+        "TX, US",
+        "TX, USA",
+        "US",
+        "USA"
+      ],
+      "cities_derived": null,
+      "countries_derived": null,
+      "remote_derived": false,
+      "company_id": "c33b0736-4ea9-be5c-a488-0f931f754df2",
+      "company_image_id": "d3znuxps84tasbbq1ucs",
+      "logo": "",
+      "salary_currency": "USD",
+      "salary_min_value": 4500,
+      "salary_max_value": 5800,
+      "salary_unit_text": "week",
+      "ai_salary_currency": "USD",
+      "ai_salary_min_value": 4500,
+      "ai_salary_max_value": 5800,
+      "ai_salary_unit_text": "week",
+      "ai_key_skills": [
+        "Python",
+        "C++",
+        "deep learning",
+        "NLP",
+        "artificial intelligence",
+        "statistics",
+        "machine learning"
+      ],
+      "experience_level": "",
+      "work_arrangement": "",
+      "description_text": "**Job Description**\n\nAt Citadel, our mission is to be the most successful investment team in the world. Machine Learning Researchers play a key role in this mission by developing next-generation models and trading approaches for a range of investment strategies. You'll get to challenge the impossible in quantitative research by applying sophisticated and complex statistical techniques to financial markets, some of the most complex data sets in the world.\n\nYour Objectives\n\n* Use statistics, machine learning (e.g. deep learning, NLP) to extract patterns from various kinds of datasets through innovative and rigorous research\n* Implement algorithms in high-quality code\n* Work with large data sets, including unconventional and unstructured data sources\n* Back-test models and document research findings\n\nYour Skills & Talents\n\n* PhD degree in mathematics, statistics, physics, computer science, or another highly quantitative field\n* Advanced training and a strong research track record in machine learning, statistics, deep learning, natural language processing, artificial intelligence, or a closely related quantitative field\n* Prior experience working in a data driven detailed research environment\n* Hands on programming experience in Python or C++\n* A background demonstrating strong problem-solving skills\n* An ability to communicate advanced concepts in a concise and logical way\n* Proficiency in creating and using algorithms to meticulously investigate and work through large data or error-checking problems\n\nOpportunities available in New York, Miami, Greenwich, and Houston.\n\nIn accordance with applicable law, the base salary range for this role is $4,500 to $5,800 per week.\n\n**About Citadel**\n\nCitadel is one of the world's leading alternative investment managers. We manage capital on behalf of many of the world's preeminent private, public and nonprofit institutions. We seek the highest and best use of investor capital in order to deliver market leading results and contribute to broader economic growth. For over 30 years, Citadel has cultivated a culture of learning and collaboration among some of the most talented and accomplished investment professionals, researchers and engineers in the world. Our colleagues are empowered to test their ideas and develop commercial solutions that accelerate their growth and drive real impact.\n",
+      "frontend_payload": {
+        "about_company": [
+          "Citadel is one of the world's leading alternative investment managers.",
+          "We manage capital on behalf of many of the world's preeminent private, public and nonprofit institutions.",
+          "We seek the highest and best use of investor capital in order to deliver market leading results and contribute to broader economic growth.",
+          "For over 30 years, Citadel has cultivated a culture of learning and collaboration among some of the most talented and accomplished investment professionals, researchers and engineers in the world.",
+          "Our colleagues are empowered to test their ideas and develop commercial solutions that accelerate their growth and drive real impact."
+        ],
+        "about_role": "Machine Learning Researchers at Citadel develop next-generation models and trading approaches for investment strategies by applying sophisticated statistical techniques to financial markets.",
+        "annual_salary": [
+          "$4,500 to $5,800 per week"
+        ],
+        "benefits": [],
+        "education_level": [
+          "PhD degree in mathematics, statistics, physics, computer science, or another highly quantitative field",
+          "Advanced training and a strong research track record in machine learning, statistics, deep learning, natural language processing, artificial intelligence, or a closely related quantitative field"
+        ],
+        "equal_opportunity": [],
+        "experience_level": [
+          "PhD"
+        ],
+        "location": [
+          "New York",
+          "Miami",
+          "Greenwich",
+          "Houston"
+        ],
+        "requirements": [
+          "Prior experience working in a data driven detailed research environment",
+          "Hands on programming experience in Python or C++",
+          "A background demonstrating strong problem-solving skills",
+          "An ability to communicate advanced concepts in a concise and logical way",
+          "Proficiency in creating and using algorithms to meticulously investigate and work through large data or error-checking problems"
+        ],
+        "responsibilities": [
+          "Use statistics, machine learning (e.g. deep learning, NLP) to extract patterns from various kinds of datasets through innovative and rigorous research",
+          "Implement algorithms in high-quality code",
+          "Work with large data sets, including unconventional and unstructured data sources",
+          "Back-test models and document research findings"
+        ],
+        "skills": [
+          "Machine learning",
+          "Deep learning",
+          "NLP",
+          "Statistics",
+          "Artificial intelligence",
+          "Python",
+          "C++"
+        ],
+        "work_type": [
+          "Full-time"
+        ]
+      }
+    },
+    {
+      "id": "3326d4f3-65ac-41aa-821e-78351eb7284f",
+      "source_id": "482790294771144",
+      "obfuscated_id": 33071935,
+      "title": "Clearance & Settlement IC Associate",
+      "organization": "DTCC",
+      "job_url": "https://www.wayup.com/i-Financial-Services-j-Clearance-Settlement-IC-Associate-DTCC-482790294771144/",
+      "employment_type": null,
+      "date_posted": "2026-07-16T00:08:42.686116Z",
+      "locations_derived": [
+        "Jersey City, NJ, US",
+        "Jersey City, NJ, USA",
+        "NJ, US",
+        "NJ, USA",
+        "US",
+        "USA"
+      ],
+      "cities_derived": null,
+      "countries_derived": null,
+      "remote_derived": false,
+      "company_id": "2be0d119-3307-05fa-f4e1-92d75bdd28e7",
+      "company_image_id": "v1419842108/nrzfrugzdue934r6omsi.png",
+      "logo": "",
+      "salary_currency": "",
+      "salary_min_value": 0,
+      "salary_max_value": 0,
+      "salary_unit_text": "",
+      "ai_salary_currency": "USD",
+      "ai_salary_min_value": 70000,
+      "ai_salary_max_value": 95000,
+      "ai_salary_unit_text": "yearly",
+      "ai_key_skills": [
+        "operational processes",
+        "documented procedures",
+        "job aides",
+        "process improvement",
+        "efficiency improvement",
+        "specialized workflows",
+        "exception resolution",
+        "complex inquiries",
+        "workload ownership",
+        "deliverables",
+        "critical timeframes",
+        "competing priorities management",
+        "benchmark tracking",
+        "audit follow-up",
+        "compliance",
+        "risk management",
+        "department controls",
+        "client needs",
+        "client requests",
+        "inquiry response",
+        "issue resolution",
+        "effective communication",
+        "active engagement",
+        "training facilitation",
+        "project participation",
+        "initiative participation",
+        "honesty",
+        "transparency",
+        "learning opportunities",
+        "collaboration",
+        "open communication",
+        "disagreement resolution"
+      ],
+      "experience_level": "",
+      "work_arrangement": "",
+      "description_text": "**JOB DESCRIPTION**\n\n**Are you ready to make an impact at DTCC?**\n\nDo you want to work on innovative projects, collaborate with a dynamic and supportive team, and receive investment in your professional development? At DTCC, we are at the forefront of innovation in the financial markets. We are committed to helping our employees grow and succeed. We believe that you have the skills and drive to make a real impact. We foster a thriving internal community and are committed to creating a workplace that looks like the world that we serve.\n\n**Pay and Benefits:**\n\n* Competitive compensation, including base pay and annual incentive\n* Comprehensive health and life insurance and well-being benefits, based on location\n* Pension / Retirement benefits\n* Paid Time Off and Personal/Family Care, and other leaves of absence when needed to support your physical, financial, and emotional well-being.\n* DTCC offers a flexible/hybrid model of 3 days onsite and 2 days remote (onsite Tuesdays, Wednesdays and a third day unique to each team or employee).\n\n**The Impact you will have in this role:**\n\nThe Global Business Operations (GBO) organization is responsible for all operations and asset services supporting the following DTCC businesses: The Depository Trust Company (DTC), National Securities Clearing Corporation (NSCC), Fixed Income Clearing Corporation (FICC) - Government Securities Division (GSD) & Mortgage-Backed Securities Division (MBSD), Wealth Management Services (WMS), Insurance & Retirement Services (I&RS), Solutions Operations - Global Market Entity Identifier (GMEI), and Global Service Bureau (GSB). GBO's mission is to provide the Securities Industry with superior operations processing and client services support in an environment that minimizes risk and cost while maximizing efficiency. Equity Clearance and Settlement Operations provides operational support for DTC and NSCC focusing on depository services, trade capture, comparison and netting of virtually all broker-to-broker equity, listed corporate and muni bond and UIT trading in the U.S, culminating into a consolidated end-of-day process that completes the transfer between trading parties of securities ownership and cash daily. A key area of responsibility for the Equity Clearance and Settlement is the support and preparedness of business resiliency and continuity efforts, cyber security events, and default/liquidity management. FICC Operations provides operational support for the Government Security and Mortgage Backed Securities divisions of FICC focusing on trade capture, comparison, netting and settlement services to the mortgage-backed and government securities market thus providing operational efficiency to this high dollar value market place. A key area of responsibility for the FICC Operations, is the support and preparedness of business resiliency and continuity efforts, cyber security events, and default/liquidity management.\n\n**Your Primary Responsibilities:**\n\n* Executes on operational processes by following documented procedures and job aides, able to make suggestions on improving process and efficiency. Processes specialized workflows, resolves exceptions, assists with complex inquiries.\n* Takes ownership of workload, ensures deliverables are met while adhering to critical timeframes; ability to manage competing priorities. Assists in benchmark tracking, audit follow-up, compliance and risk management activities.\n* Strong knowledge of department controls. Aligns risk and control processes into day-to-day responsibilities to monitor and mitigate risk, escalates appropriately.\n* Maintains a steadfast focus on meeting the needs/requests of our internal and external clients, including responding to inquiries timely and accurately, resolving issues promptly.\n* Demonstrates effective communication skills, active engagement in meetings and display curiosity to learn and grow, accepts feedback given and applies to role. Presents information clearly while speaking in small to mid-sized groups.\n* Facilitates training sessions for junior team members as directed by management. Oversees the development of training plans to meet staff development targets.\n* Participates and owns small projects and initiatives.\n* Aligns risk and control processes into day to day responsibilities to monitor and mitigate risk; escalates appropriately\n\n**Qualifications:**\n\n* Minimum of 4 years of related experience\n* Bachelor's degree preferred or equivalent experience\n\n**Talents Needed for Success:**\n\n* Fosters a culture where honesty and transparency are expected.\n* Stays current on changes in his/her own specialist area and seeks out learning opportunities to ensure knowledge is up-to-date.\n* Collaborates well within and across teams.\n* Communicates openly with team members and others.\n* Resolves disagreements between colleagues effectively, minimizing the impact on the wider team.\n\nThe salary range is indicative for roles at the same level within DTCC across all US locations. Actual salary is determined based on the role, location, individual experience, skills, and other considerations. We are an equal opportunity employer and value diversity at our company. We do not discriminate on the basis of race, religion, color, national origin, sex, gender, gender expression, sexual orientation, age, marital status, veteran status, or disability status. We will ensure that individuals with disabilities are provided reasonable accommodation to participate in the job application or interview process, to perform essential job functions, and to receive other benefits and privileges of employment. Please contact us to request accommodation.\n\n**ABOUT US**\n\nWith over 50 years of experience, DTCC is the premier post-trade market infrastructure for the global financial services industry. From 20 locations around the world, DTCC, through its subsidiaries, automates, centralizes, and standardizes the processing of financial transactions, mitigating risk, increasing transparency, enhancing performance and driving efficiency for thousands of broker/dealers, custodian banks and asset managers. Industry owned and governed, the firm innovates purposefully, simplifying the complexities of clearing, settlement, asset servicing, transaction processing, trade reporting and data services across asset classes, bringing enhanced resilience and soundness to existing financial markets while advancing the digital asset ecosystem. In 2024, DTCC\u2019s subsidiaries processed securities transactions valued at U.S. $3.7 quadrillion and its depository subsidiary provided custody and asset servicing for securities issues from over 150 countries and territories valued at U.S. $99 trillion. DTCC\u2019s Global Trade Repository service, through locally registered, licensed, or approved trade repositories, processes more than 25 billion messages annually. To learn more, please visit us at www.dtcc.com or connect with us on LinkedIn , X , YouTube , Facebook and Instagram .\n\nDTCC proudly supports Flexible Work Arrangements favoring openness and gives people freedom to do their jobs well, by encouraging diverse opinions and emphasizing teamwork. When you join our team, you\u2019ll have an opportunity to make meaningful contributions at a company that is recognized as a thought leader in both the financial services and technology industries. A DTCC career is more than a good way to earn a living. It\u2019s the chance to make a difference at a company that\u2019s truly one of a kind.\n\nLearn more about Clearance and Settlement by clicking here .\n",
+      "frontend_payload": {
+        "about_company": [
+          "With over 50 years of experience, DTCC is the premier post-trade market infrastructure for the global financial services industry.",
+          "DTCC, through its subsidiaries, automates, centralizes, and standardizes the processing of financial transactions, mitigating risk, increasing transparency, enhancing performance and driving efficiency for thousands of broker/dealers, custodian banks and asset managers.",
+          "Industry owned and governed, the firm innovates purposefully, simplifying the complexities of clearing, settlement, asset servicing, transaction processing, trade reporting and data services across asset classes, bringing enhanced resilience and soundness to existing financial markets while advancing the digital asset ecosystem.",
+          "DTCC proudly supports Flexible Work Arrangements favoring openness and gives people freedom to do their jobs well, by encouraging diverse opinions and emphasizing teamwork.",
+          "When you join our team, you\u2019ll have an opportunity to make meaningful contributions at a company that is recognized as a thought leader in both the financial services and technology industries.",
+          "A DTCC career is more than a good way to earn a living. It\u2019s the chance to make a difference at a company that\u2019s truly one of a kind."
+        ],
+        "about_role": "At DTCC, we are at the forefront of innovation in the financial markets. We are committed to helping our employees grow and succeed. We believe that you have the skills and drive to make a real impact. We foster a thriving internal community and are committed to creating a workplace that looks like the world that we serve.",
+        "annual_salary": [
+          "Competitive compensation, including base pay and annual incentive"
+        ],
+        "benefits": [
+          "Comprehensive health and life insurance and well-being benefits, based on location",
+          "Pension / Retirement benefits",
+          "Paid Time Off and Personal/Family Care, and other leaves of absence when needed"
+        ],
+        "education_level": [
+          "Bachelor's degree preferred or equivalent experience"
+        ],
+        "equal_opportunity": [
+          "We are an equal opportunity employer and value diversity at our company.",
+          "We do not discriminate on the basis of race, religion, color, national origin, sex, gender, gender expression, sexual orientation, age, marital status, veteran status, or disability status.",
+          "We will ensure that individuals with disabilities are provided reasonable accommodation to participate in the job application or interview process, to perform essential job functions, and to receive other benefits and privileges of employment.",
+          "Please contact us to request accommodation."
+        ],
+        "experience_level": [
+          "4 years of related experience"
+        ],
+        "location": [
+          "US locations"
+        ],
+        "requirements": [
+          "Minimum of 4 years of related experience",
+          "Bachelor's degree preferred or equivalent experience"
+        ],
+        "responsibilities": [
+          "Executes on operational processes by following documented procedures and job aides, able to make suggestions on improving process and efficiency.",
+          "Processes specialized workflows, resolves exceptions, and assists with complex inquiries.",
+          "Takes ownership of workload, ensures deliverables are met while adhering to critical timeframes, and manages competing priorities.",
+          "Assists in benchmark tracking, audit follow-up, compliance, and risk management activities.",
+          "Maintains a steadfast focus on meeting the needs/requests of our internal and external clients, including responding to inquiries timely and accurately, and resolving issues promptly.",
+          "Demonstrates effective communication skills, active engagement in meetings, and curiosity to learn and grow.",
+          "Accepts feedback given and applies it to the role.",
+          "Presents information clearly while speaking in small to mid-sized groups.",
+          "Facilitates training sessions for junior team members as directed by management.",
+          "Oversees the development of training plans to meet staff development targets.",
+          "Participates and owns small projects and initiatives.",
+          "Aligns risk and control processes into day-to-day responsibilities to monitor and mitigate risk, and escalates appropriately."
+        ],
+        "skills": [
+          "Honesty and transparency",
+          "Staying current on changes in specialist area",
+          "Seeking out learning opportunities",
+          "Collaboration within and across teams",
+          "Open communication with team members and others",
+          "Effective conflict resolution"
+        ],
+        "work_type": [
+          "Flexible/hybrid model (3 days onsite, 2 days remote)",
+          "Onsite Tuesdays, Wednesdays and a third day unique to each team or employee"
+        ]
+      }
+    }
+  ],
+  "count": 6
+}
