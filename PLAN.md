@@ -6,8 +6,8 @@ We need a job-extraction platform. The design must be **modular** and **technolo
 
 The first phase will be:
 1. Extract job postings from `https://map.rezi.ai/` filtered by geographic location — using the open, unauthenticated API endpoints already discovered.
-2. Identify which of those job postings are **programming-related**.
-3. Classify each programming job by **how long it has been waiting to be filled** (based on `date_posted`).
+2. Identify and classify job postings into relevant categories.
+3. Classify jobs by **how long they have been waiting to be filled** (based on `posted_at`/`date_posted`).
 4. Present the results as a **sorted, filterable list** for review and downstream use.
 
 ---
@@ -25,25 +25,16 @@ The first source is the Rezi map endpoint. Two endpoints are confirmed via HAR i
 
 ### 2.2 Job record fields (from `output.json` / `jobs_output.json`)
 
-Core fields useful for filtering and classification:
+Current Rezi source fields (these are mapped by the adapter into the normalized model defined in `DATA_MODEL.md`):
 
-- `obfuscated_id` (int) — unique job identifier used in API calls
-- `title` (string) — job title
-- `organization` (string) — employer name
-- `job_url` (string) — application URL
-- `date_posted` (ISO-8601 string) — used to compute "days waiting to be filled"
-- `locations_derived` (array of strings) — geographic locations
-- `countries_derived` (array or null)
-- `cities_derived` (array or null)
-- `remote_derived` (boolean)
-- `work_arrangement` (string)
-- `salary_min_value`, `salary_max_value`, `salary_currency`, `salary_unit_text`
-- `ai_salary_min_value`, `ai_salary_max_value`, `ai_salary_currency`, `ai_salary_unit_text`
-- `ai_key_skills` (array of strings) — **primary field for programming detection** (e.g., "Python", "SQL", "AWS", "machine learning", "C++")
-- `employment_type` (string or null)
-- `experience_level` (string)
-- `description_text` (string) — full job description
-- `frontend_payload` (object) — enriched structured data including `skills`, `requirements`, `responsibilities`, `education_level`, `work_type`, `about_role`, `annual_salary`, `benefits`, etc.
+- `obfuscated_id` (int) — source native ID
+- `title` (string), `organization` (string), `job_url` (string), `description_text` (string)
+- `date_posted` (ISO-8601 string) — original posted date
+- `locations_derived`, `cities_derived`, `countries_derived` — mapped to normalized locations/cities/countries
+- `remote_derived` (boolean) — mapped to `allow_remote`
+- `salary_min_value`, `salary_max_value`, `salary_currency`, `salary_unit_text` — mapped to normalized salary fields
+- `ai_key_skills` (array of strings) — mapped to normalized `skills` (many-to-many)
+- Other fields (e.g., `frontend_payload`, `employment_type`, `experience_level`, `work_arrangement`) may be used by the adapter for normalization/classification and stored as needed in `raw_data`.
 
 ### 2.3 Technical constraints & observations
 
@@ -52,7 +43,7 @@ Core fields useful for filtering and classification:
 - PMTiles file is ~775 MB; only tile ranges covering the user's bounding box should be downloaded.
 - Tiles not present in the directory are empty (no jobs in that area).
 - Tile compression is GZIP (PMTiles v3).
-- `date_posted` values are in the past (e.g., July 2026), so "waiting time" = today − date_posted.
+- `date_posted` values are in the past (e.g., July 2026); waiting time is computed from `posted_at`/`date_posted`.
 
 ---
 
@@ -62,34 +53,31 @@ Core fields useful for filtering and classification:
 
 | ID | Requirement | Priority |
 |----|-------------|----------|
-| FR-01 | Accept a geographic area as input (bounding box: min_lat, min_lng, max_lat, max_lng) and a zoom level. | High |
-| FR-02 | Compute the PMTiles (z, x, y) tiles covering that area using Web Mercator math. | High |
-| FR-03 | Fetch only the required byte ranges from `jobs_v2.pmtiles` via HTTP Range requests (no full-file download). | High |
-| FR-04 | Parse PMTiles v3 header + directory to resolve tile byte offsets/lengths. | High |
-| FR-05 | Decompress gzip tile payloads and extract varint-encoded `obfuscated_id` values. | High |
-| FR-06 | POST batches of ≤9 `obfuscated_ids` to the details API and collect full job records. | High |
-| FR-07 | Apply configurable rate limiting and retry logic between API batches. | High |
-| FR-08 | Filter jobs for **programming-related** roles using `ai_key_skills`, `title`, `frontend_payload.skills`, and/or `description_text`. | High |
-| FR-09 | Compute "days waiting to be filled" = current date − `date_posted`. | High |
-| FR-10 | Sort results by waiting time (oldest first = waiting longest). | High |
-| FR-11 | Allow optional additional filters: salary range, remote/onsite, country/city, experience level, employment type. | Medium |
-| FR-12 | Provide a web interface and a REST API to interact with the system. | High |
-| FR-13 | Support incremental/resumable runs via backend storage (persist fetched tile ranges and job details to avoid re-fetching). | Medium |
-| FR-14 | Backend daemon to periodically query configured job sources and update stored job data. | High |
-| FR-15 | Log progress (tiles processed, IDs extracted, API batches completed, jobs saved). | Medium |
-| FR-16 | Support pluggable source adapters so new data sources can be added without modifying core pipeline logic. | High |
+| FR-01 | Support pluggable job sources via a common Source Adapter interface (API, scraping, hybrid) so sources can be added/removed without modifying core pipeline logic. | High |
+| FR-02 | Persist jobs in normalized form per `DATA_MODEL.md` with provenance (source, external_id) and deduplication. | High |
+| FR-03 | Backend daemon to periodically query enabled sources and update stored job data. | High |
+| FR-04 | Provide a REST API and a web interface (Angular) to query, filter, and sort jobs. | High |
+| FR-05 | Classify jobs into categories (many-to-many) with per-assignment confidence. | High |
+| FR-06 | Normalize skills into a `skills` table with many-to-many mapping (`job_skills`). | High |
+| FR-07 | Normalize locations into `countries`, `cities`, and `locations` tables from source-provided location data. | High |
+| FR-08 | Compute waiting time (days since posted) from `posted_at` or `date_posted` and allow sorting by waiting time (oldest first). | High |
+| FR-09 | Support filtering by categories, skills, location/country/city, remote availability (`allow_remote`), salary range, and organization. | Medium |
+| FR-10 | Allow configuration of sources (name, type, enabled, config) in a generic way. | Medium |
+| FR-11 | Track fetch runs per source with status, timestamps, and generic metadata (`metadata` JSON). | Medium |
+| FR-12 | Apply respectful rate limiting per source with retry/backoff where applicable. | Medium |
+| FR-13 | Retain provenance/traceability (store `raw_data` and source association) for processed jobs. | Medium |
 
 ### 3.2 Non-Functional Requirements
 
 | ID | Requirement |
 |----|-------------|
 | NF-01 | Architecture must support multiple source types (API-based, scraping-based, hybrid) via a common adapter interface. |
-| NF-02 | Core pipeline (filter, classify, processing logic) must operate on a normalized job record schema independent of the source. |
+| NF-02 | Core pipeline (classification, normalization, processing logic) must operate on a normalized schema independent of the source, following `DATA_MODEL.md`. |
 | NF-03 | Respectful rate limiting to avoid overwhelming any API or server. |
 | NF-04 | Backend: Node.js with Express. Frontend (first version): Angular. |
 | NF-05 | Database: to be determined later (with MySQL as a strong candidate). |
-| NF-06 | Data model: to be determined later. |
-| NF-07 | Deterministic processing for the same input area and zoom. |
+| NF-06 | Data model: as defined in `DATA_MODEL.md`. |
+| NF-07 | Deterministic and traceable processing. |
 
 ---
 
@@ -99,7 +87,7 @@ Core fields useful for filtering and classification:
 ┌─────────────────────────────────────────────────────────────────────────┐
 │                           Frontend (Angular)                              │
 │                     Web UI for browsing, filtering, sorting                │
-│                         Job listings (programming-related)                 │
+│                         Job listings (filterable by categories, skills, location, etc.)                 │
 └─────────────────────────────────────────────────────────────────────────┘
                                         │
                                    REST API
@@ -139,7 +127,7 @@ Core fields useful for filtering and classification:
 
 **Frontend (Angular — first version):**
 
-- Web interface to view, filter, and sort programming-related jobs by waiting time and other filters (location, remote/onsite, salary range, experience level, employment type, etc.).
+- Web interface to view, filter, and sort jobs by categories, waiting time, location, remote availability, salary range, etc.
 - Communicates with the backend via REST API.
 
 **Backend (Node.js + Express):**
@@ -148,9 +136,9 @@ Core fields useful for filtering and classification:
 - **Source Adapters (pluggable)**: Modular adapters implementing a common interface (`JobSource`). Each adapter encapsulates source-specific logic (API calls, scraping, etc.). First adapter: Rezi map.
   - `sources/base/JobSource` (interface/contract)
   - `sources/rezi/` — Rezi implementation (tiles/PMTiles parsing, ID extraction, details API, normalization)
-- **Core Pipeline**: Normalization to a common `JobRecord` schema, programming detection, waiting-time classification, and sorting — independent of any specific source.
-- **Job Fetcher Daemon**: Background process that periodically runs configured source adapters, processes results through the pipeline, and persists normalized job records to the database. Supports incremental/resumable behavior.
-- **Database Layer**: Persistence for job records, metadata (e.g., fetched ranges, last run timestamps) to support deduplication, incremental updates, and resumability. Database and schema are TBD (MySQL candidate).
+- **Core Pipeline**: Normalization to a common schema, classification into categories (with confidence), waiting-time calculation, and sorting — independent of any specific source.
+- **Job Fetcher Daemon**: Background process that periodically runs configured source adapters, processes results through the pipeline, and persists normalized job records to the database. Handles deduplication and incremental updates per source.
+- **Database Layer**: Persistence for jobs, sources, fetch runs, locations, categories, skills, etc. as defined in `DATA_MODEL.md`. Database and schema are TBD (MySQL candidate).
 
 ---
 
@@ -164,27 +152,22 @@ Core fields useful for filtering and classification:
    c. Tile fetch: Range requests → gzip-decompressed tile bytes
    d. ID extraction: Tile bytes → set of `obfuscated_id` ints
    e. API batching: ID set → batches of 9 → POST requests → raw job records
-4. **Normalization**: Raw job records → normalized `JobRecord` schema via source-specific normalizer.
-5. **Processing**: Apply programming filter; compute `days_waiting` = now − `date_posted`; sort by waiting time.
+4. **Normalization**: Raw job records → normalized schema (per `DATA_MODEL.md`) via source-specific normalizer.
+5. **Processing**: Classify into categories (many-to-many) with confidence; compute waiting time from `posted_at`/`date_posted`; sort by waiting time.
 6. **Persistence**: Store normalized job records and relevant metadata in the database (deduplication/incremental updates).
 7. **User access**: Frontend (Angular) queries REST API → Backend reads from database → Filtered, sorted results returned to UI.
 
 ---
 
-## 6. Programming Detection Logic (FR-08)
+## 6. Classification Logic (FR-08)
 
-A job is considered **programming-related** if ANY of the following is true:
-
-- `ai_key_skills` contains a programming keyword (Python, Java, JavaScript, C++, C#, Go, Ruby, PHP, Swift, Kotlin, Rust, SQL, AWS, Docker, Kubernetes, Git, React, Angular, Vue, Node.js, Django, Flask, machine learning, deep learning, NLP, artificial intelligence, data engineering, backend, frontend, fullstack, software engineer, developer, programmer, DevOps, SRE, etc.)
-- `title` contains engineering/developer keywords (Engineer, Developer, Programmer, Architect, DevOps, SRE, ML Engineer, Data Engineer, Backend, Frontend, Full Stack)
-- `frontend_payload.skills` contains programming keywords
-- `description_text` contains code/language mentions (optional, lower confidence)
+Classification is performed by source adapters/pipeline into categories (many-to-many). For the first phase, the "programming" category uses normalized `skills`, `title`, and `description_text` to determine relevance. The adapter maps source-specific signals (e.g., Rezi's `ai_key_skills`) into normalized `skills`.
 
 ---
 
-## 7. Waiting Time Classification (FR-09)
+## 7. Waiting Time Calculation (FR-09)
 
-- `days_waiting` = `(current_utc_date − date_posted).days`
+- `days_waiting` = `(current_utc_date − posted_at/date_posted).days`
 - Categories (optional labels):
   - `fresh`: 0–7 days
   - `recent`: 8–30 days
@@ -203,9 +186,9 @@ A job is considered **programming-related** if ANY of the following is true:
 | `frontend/` | Angular app: web UI for browsing/filtering/sorting jobs. |
 | `backend/src/sources/base/JobSource.ts` | Abstract source adapter interface (pluggable). |
 | `backend/src/sources/rezi/` | Rezi source adapter (tiles/PMTiles, IDs, details API, normalization). |
-| `backend/src/pipeline/` | Normalization, filtering, classification, sorting logic (source-agnostic). |
+| `backend/src/pipeline/` | Normalization, classification into categories, waiting-time calculation, sorting logic (source-agnostic). |
 | `backend/src/daemon/` | Periodic job fetcher for configured sources. |
-| `backend/src/db/` | Database layer, migrations, models (TBD; MySQL candidate). |
+| `backend/src/db/` | Database layer, migrations, models (based on `DATA_MODEL.md`; MySQL candidate). |
 | `backend/src/api/` | REST API routes/controllers. |
 | `docs/` | Documentation (architecture, setup, usage). |
 | `PLAN.md` | This document |
@@ -217,14 +200,14 @@ A job is considered **programming-related** if ANY of the following is true:
 | Phase | Task | Description |
 |-------|------|-------------|
 | 1 | Define backend/frontend structure | Scaffold Node.js + Express backend and Angular frontend. |
-| 2 | Define common types/schema | Define normalized `JobRecord` types and `JobSource` adapter interface (technology-agnostic contract). |
+| 2 | Define common types/schema | Define normalized types based on `DATA_MODEL.md` and `JobSource` adapter interface (technology-agnostic contract). |
 | 3 | Implement Rezi source adapter | Port Rezi logic (tiles, PMTiles, IDs, details API) into pluggable adapter with normalization. |
-| 4 | Implement core pipeline | Filtering (programming), waiting-time classification, sorting. |
+| 4 | Implement core pipeline | Classification into categories (with confidence), waiting-time calculation, sorting. |
 | 5 | Database layer | Set up database (TBD; MySQL candidate), schema/migrations, persistence logic. |
-| 6 | Implement daemon | Periodic fetcher to run sources and persist results (incremental/resumable). |
+| 6 | Implement daemon | Periodic fetcher to run sources and persist results with deduplication/incremental updates. |
 | 7 | Implement REST API | Endpoints to query/filter/sort stored jobs. |
-| 8 | Implement Angular frontend | Web UI to browse, filter, and sort programming-related jobs. |
-| 9 | Testing | Validate against sample areas; verify filter accuracy and pipeline correctness. |
+| 8 | Implement Angular frontend | Web UI to browse, filter, and sort jobs by categories, skills, location, etc. |
+| 9 | Testing | Validate with Rezi source and verify classification, filtering, sorting, and deduplication. |
 | 10 | Documentation | Setup, usage, and architecture docs. |
 
 ---
@@ -236,9 +219,9 @@ A job is considered **programming-related** if ANY of the following is true:
 | API rate limiting / blocking | Configurable `api_delay`; retry with exponential backoff; process in small batches. |
 | PMTiles directory format changes | Use robust parsing (existing `pmtiles` logic); keep source adapter isolated. |
 | Missing tiles in directory | Treat missing tiles as empty (no jobs); log count. |
-| `date_posted` in the future or missing | Clamp `days_waiting` to ≥0; skip jobs without `date_posted` or mark as unknown. |
+| `date_posted`/`posted_at` missing or invalid | Compute days from available timestamp (prefer `posted_at`); skip or mark if neither is valid. |
 | Large areas → many tiles → many API batches | Configurable limits; warn about estimated load; daemon scheduling. |
-| Source schema drift across future adapters | Normalized `JobRecord` schema with per-source normalization functions. |
+| Source schema drift across future adapters | Follow `DATA_MODEL.md`; per-source normalization maps to the fixed normalized schema. |
 | New sources require different fetch mechanisms (e.g., scraping) | Adapter interface (`JobSource`) isolates source-specific logic from core pipeline. |
 | Technology choices TBD (DB/model) | Keep persistence layer abstracted to allow swapping (e.g., MySQL initially). |
 
@@ -246,4 +229,4 @@ A job is considered **programming-related** if ANY of the following is true:
 
 ## 11. Next Step
 
-Scaffold backend (Node.js + Express) and frontend (Angular), define `JobSource` interface and normalized `JobRecord` types, then implement the Rezi source adapter in the backend.
+Scaffold backend (Node.js + Express) and frontend (Angular), define `JobSource` interface and normalized types based on `DATA_MODEL.md`, then implement the Rezi source adapter in the backend.
