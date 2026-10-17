@@ -1,4 +1,4 @@
-# Project Development Plan: Rezi Map Job Extractor
+# Project Development Plan: Job Extraction Platform
 
 ## 1. Problem Statement
 
@@ -73,9 +73,9 @@ Core fields useful for filtering and classification:
 | FR-09 | Compute "days waiting to be filled" = current date − `date_posted`. | High |
 | FR-10 | Sort results by waiting time (oldest first = waiting longest). | High |
 | FR-11 | Allow optional additional filters: salary range, remote/onsite, country/city, experience level, employment type. | Medium |
-| FR-12 | Output results as a list (JSON, CSV, and/or SQLite). | High |
-| FR-13 | Support incremental/resumable runs (cache fetched tile ranges and job details to avoid re-fetching). | Medium |
-| FR-14 | CLI interface for all inputs and outputs, including source selection. | High |
+| FR-12 | Provide a web interface and a REST API to interact with the system. | High |
+| FR-13 | Support incremental/resumable runs via backend storage (persist fetched tile ranges and job details to avoid re-fetching). | Medium |
+| FR-14 | Backend daemon to periodically query configured job sources and update stored job data. | High |
 | FR-15 | Log progress (tiles processed, IDs extracted, API batches completed, jobs saved). | Medium |
 | FR-16 | Support pluggable source adapters so new data sources can be added without modifying core pipeline logic. | High |
 
@@ -84,84 +84,90 @@ Core fields useful for filtering and classification:
 | ID | Requirement |
 |----|-------------|
 | NF-01 | Architecture must support multiple source types (API-based, scraping-based, hybrid) via a common adapter interface. |
-| NF-02 | Core pipeline (filter, classify, output, cache) must operate on a normalized job record schema independent of the source. |
+| NF-02 | Core pipeline (filter, classify, processing logic) must operate on a normalized job record schema independent of the source. |
 | NF-03 | Respectful rate limiting to avoid overwhelming any API or server. |
-| NF-04 | Project-local Python virtual environment (no system-wide package installs). |
-| NF-05 | Deterministic output for the same input area and zoom. |
+| NF-04 | Backend: Node.js with Express. Frontend (first version): Angular. |
+| NF-05 | Database: to be determined later (with MySQL as a strong candidate). |
+| NF-06 | Data model: to be determined later. |
+| NF-07 | Deterministic processing for the same input area and zoom. |
 
 ---
 
 ## 4. System Architecture (High-Level)
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                      CLI / User Input                       │
-│  (bbox, zoom, source, filters, output format, max_batches)  │
-└─────────────────────────────────────────────────────────────┘
-                               │
-┌─────────────────────────────▼─────────────────────────────┐
-│                    Orchestration Layer                      │
-│  1. Select source adapter                                    │
-│  2. Source adapter fetches raw job records                  │
-│  3. Normalize records to common job schema                  │
-│  4. Apply programming filter                                │
-│  5. Compute waiting time & sort                             │
-│  6. Write output                                            │
-│                                                             │
-│  Source adapters are pluggable; core pipeline logic is      │
-│  independent of any specific technology (API, scraping, etc.)│
-└─────────────────────────────────────────────────────────────┘
-                               │
-         ┌─────────────────────┼─────────────────────┐
-         ▼                     ▼                     ▼
-┌───────────────┐   ┌───────────────┐   ┌───────────────┐
-│ Source        │   │  Shared       │   │   Cache/DB    │
-│ Adapters      │   │  Pipeline     │   │   (SQLite)    │
-│ (rezi, future │   │  (filter,     │   │               │
-│  scrape, etc.)│   │  classify,    │   │               │
-│               │   │  output)      │   │               │
-└───────────────┘   └───────────────┘   └───────────────┘
+┌─────────────────────────────────────────────────────────────────────────┐
+│                           Frontend (Angular)                              │
+│                     Web UI for browsing, filtering, sorting                │
+│                         Job listings (programming-related)                 │
+└─────────────────────────────────────────────────────────────────────────┘
+                                        │
+                                   REST API
+                                        │
+┌───────────────────────────────▼───────────────────────────────────────────┐
+│                            Backend (Node.js + Express)                      │
+│                                                                             │
+│  ┌─────────────────────────────────────────────────────────────────────┐   │
+│  │                          REST API Layer                              │   │
+│  │               Endpoints for querying, filtering, sorting jobs         │   │
+│  └─────────────────────────────────────────────────────────────────────┘   │
+│                                        │                                    │
+│  ┌─────────────────────────────────────────────────────────────────────┐   │
+│  │                        Orchestration/Pipeline                        │   │
+│  │  - Source adapter selection & execution                              │   │
+│  │  - Normalization to common job schema                                │   │
+│  │  - Programming filter & classification (waiting time, etc.)          │   │
+│  │  - Pluggable source adapters (API, scraping, hybrid)                 │   │
+│  └─────────────────────────────────────────────────────────────────────┘   │
+│                                        │                                    │
+│  ┌─────────────────────────────────────────────────────────────────────┐   │
+│  │                           Daemon / Job Fetcher                       │   │
+│  │           Periodically queries job sources (first: Rezi map)         │   │
+│  │           Persists results to database; avoids re-fetching where     │   │
+│  │           possible                                                    │   │
+│  └─────────────────────────────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────────────────┘
+                                        │
+                                      Database
+                                   (TBD; MySQL candidate)
+                                        │
+                                  Source Adapters
+                               (Rezi API, future sources)
 ```
 
-### 4.1 Modules
+### 4.1 Components
 
-**Source adapters (pluggable):**
+**Frontend (Angular — first version):**
 
-1. **`sources/base.py`** — Abstract base class / Protocol defining the `JobSource` interface: `fetch_jobs(bbox, zoom) -> Iterator[dict]`. Each source implements its own fetch logic (API, scraping, etc.).
-2. **`sources/rezi/__init__.py`** — Rezi source package; registers the `ReziSource` adapter.
-3. **`sources/rezi/tiles.py`** — Web Mercator math; compute tiles for a bounding box at a zoom level.
-4. **`sources/rezi/pmtiles.py`** — PMTiles v3 header/directory parser; HTTP range source; tile offset resolution.
-5. **`sources/rezi/ids.py`** — Varint scanning; deduplication of `obfuscated_id` values.
-6. **`sources/rezi/api.py`** — Details API client; batching (≤9 IDs); rate limiting; retry with backoff.
-7. **`sources/rezi/normalize.py`** — Maps Rezi-specific fields to the common `JobRecord` schema.
+- Web interface to view, filter, and sort programming-related jobs by waiting time and other filters (location, remote/onsite, salary range, experience level, employment type, etc.).
+- Communicates with the backend via REST API.
 
-**Shared core pipeline:**
+**Backend (Node.js + Express):**
 
-8. **`models.py`** — Normalized `JobRecord` schema (common fields used across all sources).
-9. **`pipeline.py`** — Orchestration: selects source adapter, normalizes records, runs filter → classify → output.
-10. **`filter.py`** — Programming-job detection (skills, title, description); additional filters (salary, remote, location).
-11. **`classify.py`** — Compute days waiting from `date_posted`; sort by waiting time.
-12. **`output.py`** — Write results to JSON / CSV / SQLite.
-13. **`cache.py`** — Optional SQLite cache for fetched tile ranges and job details.
-14. **`cli.py`** — Argument parsing, input validation, progress reporting, source selection.
+- **REST API Layer**: Exposes endpoints to query, filter, and sort jobs stored in the database.
+- **Source Adapters (pluggable)**: Modular adapters implementing a common interface (`JobSource`). Each adapter encapsulates source-specific logic (API calls, scraping, etc.). First adapter: Rezi map.
+  - `sources/base/JobSource` (interface/contract)
+  - `sources/rezi/` — Rezi implementation (tiles/PMTiles parsing, ID extraction, details API, normalization)
+- **Core Pipeline**: Normalization to a common `JobRecord` schema, programming detection, waiting-time classification, and sorting — independent of any specific source.
+- **Job Fetcher Daemon**: Background process that periodically runs configured source adapters, processes results through the pipeline, and persists normalized job records to the database. Supports incremental/resumable behavior.
+- **Database Layer**: Persistence for job records, metadata (e.g., fetched ranges, last run timestamps) to support deduplication, incremental updates, and resumability. Database and schema are TBD (MySQL candidate).
 
 ---
 
 ## 5. Data Flow
 
-1. **Input**: Bounding box + zoom + source → CLI
-2. **Source selection**: CLI selects adapter, calls `source.fetch_jobs(bbox, zoom)`
+1. **Configuration**: Sources, areas (bounding boxes/zooms), filters, and schedule configured via backend/API or environment (as needed).
+2. **Periodic fetch (daemon)**: Daemon triggers enabled source adapters on schedule.
 3. **Rezi source (first source)**:
    a. Tile computation: Bbox + zoom → list of (z, x, y) tiles
    b. Offset resolution: Tile list + PMTiles directory → list of (tile_offset, tile_length)
    c. Tile fetch: Range requests → gzip-decompressed tile bytes
    d. ID extraction: Tile bytes → set of `obfuscated_id` ints
    e. API batching: ID set → batches of 9 → POST requests → raw job records
-4. **Normalization**: Raw job records → normalized `JobRecord` schema via source-specific `normalize.py`
-5. **Filtering**: Job records → programming-related subset
-6. **Classification**: Compute `days_waiting` = now − `date_posted`
-7. **Sorting**: Descending by `days_waiting` (longest waiting first)
-8. **Output**: JSON / CSV / SQLite file
+4. **Normalization**: Raw job records → normalized `JobRecord` schema via source-specific normalizer.
+5. **Processing**: Apply programming filter; compute `days_waiting` = now − `date_posted`; sort by waiting time.
+6. **Persistence**: Store normalized job records and relevant metadata in the database (deduplication/incremental updates).
+7. **User access**: Frontend (Angular) queries REST API → Backend reads from database → Filtered, sorted results returned to UI.
 
 ---
 
@@ -189,25 +195,20 @@ A job is considered **programming-related** if ANY of the following is true:
 
 ---
 
-## 8. Deliverables / File Plan
+## 8. Deliverables / File Plan (High-Level)
 
-| File | Purpose |
-|------|---------|
-| `sources/base.py` | Abstract `JobSource` adapter interface |
-| `sources/rezi/` | Rezi source adapter package (tiles, pmtiles, ids, api, normalize) |
-| `models.py` | Normalized `JobRecord` schema |
-| `pipeline.py` | Orchestration: source → normalize → filter → classify → output |
-| `cli.py` | CLI entry point (source selection, filters, output format) |
-| `filter.py` | Programming-job detection and additional filters |
-| `classify.py` | Days-waiting computation and sorting |
-| `output.py` | JSON / CSV / SQLite writers |
-| `cache.py` | SQLite cache for resumable runs |
-| `requirements.txt` | Python dependencies (`requests`, `pmtiles`) |
-| `.venv/` | Project-local virtual environment |
-| `jobs_output.json` | Sample output from test run |
-| `obfuscated_ids_batches.json` | Pre-extracted ID batches (reference) |
+| Component | Purpose |
+|-----------|---------|
+| `backend/` | Node.js + Express app: REST API, source adapters, pipeline, daemon, database models (TBD). |
+| `frontend/` | Angular app: web UI for browsing/filtering/sorting jobs. |
+| `backend/src/sources/base/JobSource.ts` | Abstract source adapter interface (pluggable). |
+| `backend/src/sources/rezi/` | Rezi source adapter (tiles/PMTiles, IDs, details API, normalization). |
+| `backend/src/pipeline/` | Normalization, filtering, classification, sorting logic (source-agnostic). |
+| `backend/src/daemon/` | Periodic job fetcher for configured sources. |
+| `backend/src/db/` | Database layer, migrations, models (TBD; MySQL candidate). |
+| `backend/src/api/` | REST API routes/controllers. |
+| `docs/` | Documentation (architecture, setup, usage). |
 | `PLAN.md` | This document |
-| `README.md` | Usage instructions (to be written) |
 
 ---
 
@@ -215,16 +216,16 @@ A job is considered **programming-related** if ANY of the following is true:
 
 | Phase | Task | Description |
 |-------|------|-------------|
-| 1 | Create core schema & adapter interface | Define `JobRecord` in `models.py` and `JobSource` interface in `sources/base.py` |
-| 2 | Refactor Rezi extractor into source adapter | Move `tiles.py`, `pmtiles.py`, `ids.py`, `api.py` into `sources/rezi/`, add `normalize.py` |
-| 3 | Build orchestration pipeline | `pipeline.py` ties source → normalize → filter → classify → output together |
-| 4 | Add programming filter | Implement `filter.py` with keyword lists on `ai_key_skills`, `title`, etc. |
-| 5 | Add waiting-time classification | Implement `classify.py` with `days_waiting` computation and sorting |
-| 6 | Add output formats | CSV and SQLite writers in addition to JSON |
-| 7 | Add caching layer | SQLite cache for tile ranges and job details (resumable runs) |
-| 8 | Add CLI filters | Salary range, remote, country, experience level, min/max days waiting |
-| 9 | Testing | Validate against NYC and other areas; verify filter accuracy |
-| 10 | Documentation | `README.md` with usage examples |
+| 1 | Define backend/frontend structure | Scaffold Node.js + Express backend and Angular frontend. |
+| 2 | Define common types/schema | Define normalized `JobRecord` types and `JobSource` adapter interface (technology-agnostic contract). |
+| 3 | Implement Rezi source adapter | Port Rezi logic (tiles, PMTiles, IDs, details API) into pluggable adapter with normalization. |
+| 4 | Implement core pipeline | Filtering (programming), waiting-time classification, sorting. |
+| 5 | Database layer | Set up database (TBD; MySQL candidate), schema/migrations, persistence logic. |
+| 6 | Implement daemon | Periodic fetcher to run sources and persist results (incremental/resumable). |
+| 7 | Implement REST API | Endpoints to query/filter/sort stored jobs. |
+| 8 | Implement Angular frontend | Web UI to browse, filter, and sort programming-related jobs. |
+| 9 | Testing | Validate against sample areas; verify filter accuracy and pipeline correctness. |
+| 10 | Documentation | Setup, usage, and architecture docs. |
 
 ---
 
@@ -232,16 +233,17 @@ A job is considered **programming-related** if ANY of the following is true:
 
 | Risk | Mitigation |
 |------|------------|
-| API rate limiting / blocking | Configurable `api_delay`; retry with exponential backoff; process in small batches |
-| PMTiles directory format changes | Use the `pmtiles` library for robust parsing; don't hand-roll directory parsing |
-| Missing tiles in directory | Treat missing tiles as empty (no jobs); log count |
-| `date_posted` in the future or missing | Clamp `days_waiting` to ≥0; skip jobs without `date_posted` or mark as unknown |
-| Large areas → many tiles → many API batches | `max_batches` CLI option; warn user about estimated batch count before starting |
-| Source schema drift across future adapters | Normalized `JobRecord` schema with per-source normalization functions |
-| New sources require different fetch mechanisms (e.g., scraping) | Adapter interface (`JobSource`) isolates source-specific logic from core pipeline |
+| API rate limiting / blocking | Configurable `api_delay`; retry with exponential backoff; process in small batches. |
+| PMTiles directory format changes | Use robust parsing (existing `pmtiles` logic); keep source adapter isolated. |
+| Missing tiles in directory | Treat missing tiles as empty (no jobs); log count. |
+| `date_posted` in the future or missing | Clamp `days_waiting` to ≥0; skip jobs without `date_posted` or mark as unknown. |
+| Large areas → many tiles → many API batches | Configurable limits; warn about estimated load; daemon scheduling. |
+| Source schema drift across future adapters | Normalized `JobRecord` schema with per-source normalization functions. |
+| New sources require different fetch mechanisms (e.g., scraping) | Adapter interface (`JobSource`) isolates source-specific logic from core pipeline. |
+| Technology choices TBD (DB/model) | Keep persistence layer abstracted to allow swapping (e.g., MySQL initially). |
 
 ---
 
 ## 11. Next Step
 
-Create the module scaffold (`models.py`, `sources/base.py`, `sources/rezi/`), `requirements.txt`, and `.venv`, then refactor the working extractor into the modular structure above.
+Scaffold backend (Node.js + Express) and frontend (Angular), define `JobSource` interface and normalized `JobRecord` types, then implement the Rezi source adapter in the backend.
