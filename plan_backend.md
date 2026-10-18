@@ -50,6 +50,7 @@ The daemon uses a **RxJS-style lifecycle** (following `lmp_scraper`'s approach) 
 
 ### 3.1 Behavior
 - **Configuration**: global configuration is read exclusively from `.env` (`config/index.ts`).
+- **Poll interval**: computed at startup from source configs as `MIN(source_intervals) / 10` (capped by `POLL_INTERVAL_MS`); ensures no source can miss its scheduled run.
 - Polling loop: immediately run on start, then every `POLL_INTERVAL_MS` (interval).
 - Fire & forget: cycles do not block the loop; in-flight cycles tracked in memory.
 - Concurrency: max concurrent source cycles = `MAX_CONCURRENT_SOURCES` (env).
@@ -59,7 +60,7 @@ The daemon uses a **RxJS-style lifecycle** (following `lmp_scraper`'s approach) 
 
 ### 3.2 Execution flow per cycle
 1. Load global configuration from `.env` (only).
-2. Load enabled source IDs from `ENABLED_SOURCES` env var; fetch full `sources` config rows from the database table.
+2. Load enabled source IDs from `ENABLED_SOURCES` env var; fetch full `sources` config rows from the database table. Compute optimal poll interval as `MIN(source_intervals) / 10` (capped by `POLL_INTERVAL_MS` config default) — ensures no source misses its schedule.
 3. Create `fetch_runs` row per enabled source: status=`running`, started_at=now.
 4. Adapter: `adapter.fetch()` → returns `FetchResult{ rawJobs, metrics(acquisition only), metadata, warnings }` (raw, no normalization).
 5. Transform: run transform engine with the adapter's `transform_config` over `rawJobs` → produces normalized entities (jobs, skills, job_skills, locations, cities, countries); persist via `JobRepository` with upsert/sync and dedup by `(source_id, external_id)`.
@@ -173,7 +174,7 @@ Global settings via `.env` (env-first), loaded by `backend/src/config/index.ts`.
 | `DB_DIALECT` | `mysql` | DB dialect |
 | `SOURCES_CONFIG_PATH` | `./config/sources.json` | Fallback source config file (used only if DB `sources` table is empty/unavailable) |
 | `ENABLED_SOURCES` | `` | Comma-separated list of source IDs that are enabled (e.g., `rezi-map`). All other source configuration comes from the database `sources` table. |
-| `POLL_INTERVAL_MS` | `5000` | Orchestrator polling interval |
+| `POLL_INTERVAL_MS` | `5000` | Global poll interval. Computed at startup as `MIN(source interval_ms) / 10`, capped by this default. Ensures no source can miss its scheduled run. |
 | `MAX_CONCURRENT_SOURCES` | `3` | Max concurrent source cycles |
 | `MAX_RETRIES` | `3` | Max attempts per cycle |
 | `RETRY_DELAY_MS` | `60000` | Delay between retries (fixed; exponential preferred for network errors) |
@@ -219,7 +220,7 @@ Global settings via `.env` (env-first), loaded by `backend/src/config/index.ts`.
 - **NF-01/NF-02:** core agnostic; normalization via transform engine + per-adapter `transform_config`; classification is adapter-specific.
 - **Retries/backoff:** execution-level retries per `MAX_RETRIES`/`RETRY_DELAY_MS`; per-source `api_delay` and `retry` config in `sources.config`.
 - **PMTiles:** missing tiles treated as empty; `max_tiles` safety cap (per-source config, not global `.env`); gzip decompression; range requests.
-- **Concurrency/stalled:** `MAX_CONCURRENT_SOURCES` concurrency cap; stalled detection uses `FETCH_TIMEOUT_MS`/`STALLED_THRESHOLD_MS`.
+- **Concurrency/stalled:** `MAX_CONCURRENT_SOURCES` concurrency cap; stalled detection uses `FETCH_TIMEOUT_MS`/`STALLED_THRESHOLD_MS`; poll interval computed at startup guarantees no source misses its schedule.
 
 ---
 

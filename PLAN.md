@@ -44,6 +44,7 @@ Current Rezi source fields (these are mapped by the adapter into the normalized 
 - Tiles not present in the directory are empty (no jobs in that area).
 - Tile compression is GZIP (PMTiles v3).
 - `date_posted` values are in the past (e.g., July 2026); waiting time is computed from `posted_at`/`date_posted`.
+- Per-source fetch intervals are defined in `sources.config.interval_ms` (ms) or `cron` expression; the daemon uses an adaptive global tick computed from the shortest source interval.
 
 ---
 
@@ -143,8 +144,8 @@ Current Rezi source fields (these are mapped by the adapter into the normalized 
 
 ## 5. Data Flow
 
-1. **Configuration**: Sources, areas (bounding boxes/zooms), filters, and schedule configured via backend/API or environment (as needed).
-2. **Periodic fetch (daemon)**: Daemon triggers enabled source adapters on schedule.
+1. **Configuration**: Sources, areas (bounding boxes/zooms), filters, and per-source schedule (interval_ms or cron) configured via database `sources` table; computed at daemon startup as adaptive global poll interval.
+2. **Periodic fetch (daemon)**: Daemon triggers enabled source adapters using adaptive global tick; checks each source's `next_run_at` (from DB `sources.next_run_at`) before firing.
 3. **Rezi source (first source)**:
    a. Tile computation: Bbox + zoom → list of (z, x, y) tiles
    b. Offset resolution: Tile list + PMTiles directory → list of (tile_offset, tile_length)
@@ -202,9 +203,9 @@ Classification is performed by the source adapters (not a shared core pipeline) 
 |-------|------|-------------|
 | 1 | Define backend/frontend structure | Scaffold Node.js + Express backend and Angular frontend. |
 | 2 | Define common types/schema | Define normalized types based on `DATA_MODEL.md` and `JobSource` adapter interface (technology-agnostic contract). |
-| 3 | Implement Rezi source adapter | Port Rezi logic (tiles, PMTiles, IDs, details API) into pluggable adapter with normalization. |
-| 4 | Database layer | Set up database (TBD; MySQL candidate), schema/migrations, persistence logic. |
-| 5 | Implement daemon | Periodic fetcher to run sources and persist results with deduplication/incremental updates. |
+| 3 | Implement Rezi source adapter | Port Rezi logic (tiles, PMTiles, IDs, details API) into pluggable adapter with normalization, classification, and per-source schedule (`interval_ms` in `sources.config`). |
+| 4 | Database layer | Set up database (TBD; MySQL candidate), schema/migrations, persistence logic; include `next_run_at` in `sources` table. |
+| 5 | Implement daemon | Periodic fetcher to run sources and persist results with deduplication/incremental updates. Compute adaptive global poll interval from source configs at startup. |
 | 6 | Implement REST API | Endpoints to query/filter/sort stored jobs. |
 | 7 | Implement Angular frontend | Web UI to browse, filter, and sort jobs by categories, skills, location, etc. |
 | 8 | Testing | Validate with Rezi source and verify classification, filtering, sorting, and deduplication. |

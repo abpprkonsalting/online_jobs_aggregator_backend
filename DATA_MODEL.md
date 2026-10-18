@@ -10,9 +10,10 @@ Stores configuration for each pluggable job source.
 | id | UUID (PK) | |
 | name | VARCHAR(100) | Unique (e.g., rezi-map) |
 | type | ENUM('api','scrape','hybrid') | |
-| config | JSON | Source-specific config (endpoints, bbox/zoom, rate limits, schedule, etc.) |
+| config | JSON | Source-specific config (endpoints, bbox/zoom, rate limits, `interval_ms` or `cron` for per-source schedule, `max_tiles` safety cap, retry, etc.) |
 | enabled | TINYINT(1) DEFAULT 1 | |
-| last_run_at | DATETIME NULL | |
+| last_run_at | DATETIME NULL | When the last fetch cycle started for this source |
+| next_run_at | DATETIME NULL | Pre-computed next scheduled run (from `config.interval_ms`); used to skip ticks when not due |
 | created_at | DATETIME NOT NULL | |
 | updated_at | DATETIME NOT NULL | |
 
