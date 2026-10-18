@@ -229,4 +229,4 @@ Classification is performed by source adapters/pipeline into categories (many-to
 
 ## 11. Next Step
 
-Scaffold backend (Node.js + Express) and frontend (Angular), define `JobSource` interface and normalized types based on `DATA_MODEL.md`, then implement the Rezi source adapter in the backend.
+See `PLAN_backend.md` for the detailed backend implementation plan (fetch-only phase: orchestrator, `JobSource` adapter interface, Rezi adapter, persistence, and daemon flow). Scaffold backend (Node.js + Express) and frontend (Angular) following that plan, then implement the Rezi source adapter in the backend.
