@@ -59,12 +59,13 @@ The daemon uses a **RxJS-style lifecycle** (following `lmp_scraper`'s approach) 
 
 ### 3.2 Execution flow per cycle
 1. Load global configuration from `.env` (only).
-2. Discover enabled sources from `sources.config`.
-3. Adapter: `adapter.fetch()` → returns `FetchResult{ rawJobs, metrics(acquisition only), metadata, warnings }` (raw, no normalization).
-4. Transform: run transform engine with the adapter's `transform_config` over `rawJobs` → produces normalized entities (jobs, skills, job_skills, locations, cities, countries); persist via `JobRepository` with upsert/sync and dedup by `(source_id, external_id)`.
-5. Aggregate: `jobs_found = rawJobs.length`, compute `jobs_saved_new`/`jobs_saved_updated` from transform run; set `jobs.fetched_at` on persisted jobs.
-6. Finalize: write `fetch_runs` as `success|failed`, set `finished_at`, store counters, `metadata = adapter.metadata`, `error_message` if failed; update `sources.last_run_at`.
-7. Continue to other sources on failure (per-source isolation).
+2. Load enabled source IDs from `ENABLED_SOURCES` env var; fetch full `sources` config rows from the database table.
+3. Create `fetch_runs` row per enabled source: status=`running`, started_at=now.
+4. Adapter: `adapter.fetch()` → returns `FetchResult{ rawJobs, metrics(acquisition only), metadata, warnings }` (raw, no normalization).
+5. Transform: run transform engine with the adapter's `transform_config` over `rawJobs` → produces normalized entities (jobs, skills, job_skills, locations, cities, countries); persist via `JobRepository` with upsert/sync and dedup by `(source_id, external_id)`.
+6. Aggregate: `jobs_found = rawJobs.length`, compute `jobs_saved_new`/`jobs_saved_updated` from transform run; set `jobs.fetched_at` on persisted jobs.
+7. Finalize: write `fetch_runs` as `success|failed`, set `finished_at`, store counters, `metadata = { ...adapter.metadata, ...adapter.metrics }`, `warnings = adapter.warnings`, `error_message` if failed; update `sources.last_run_at`.
+8. Continue to other sources on failure (per-source isolation).
 
 ---
 
@@ -83,6 +84,15 @@ export interface FetchResult {
   metrics: FetchRunMetrics;   // acquisition counters
   metadata?: Record<string, unknown>; // source-specific acquisition metadata
   warnings?: string[];       // non-fatal issues
+}
+
+export interface SourceConfig {
+  id: string;               // sources.id (UUID)
+  name: string;             // e.g., rezi-map
+  type: 'api' | 'scrape' | 'hybrid';
+  config: Record<string, unknown>; // sources.config JSON (rate limits, retry, bbox, etc.)
+  enabled: boolean;
+  last_run_at?: Date | null;
 }
 
 export interface JobSourceContext {
@@ -113,6 +123,8 @@ export abstract class JobSource {
 ## 5. Transform ETL Engine (Normalization via `transform_config`)
 
 Normalization is performed by the **transform ETL engine** adapted from `lmp_scraper` (never inline in adapters). This is adopted now for the fetching phase.
+
+> **Reference:** The transform engine is adapted from `lmp_scraper` (external project). `TransformConfig (v3)`, `date_parse`, `entity_lookup_auto`, and `calculateDiff` are `lmp_scraper` concepts being ported to this stack via `JobRepository`. The original code is not part of this repository.
 
 ### 5.1 Design
 - **Per-adapter `transform_config`** (declarative JSON) declares how raw source records map to `DATA_MODEL.md` entities: `jobs`, `skills`, `job_skills`, `countries`, `cities`, `locations`. Classification into `categories`/`job_categories` is the responsibility of the specific adapter, not the transform engine.
@@ -151,7 +163,7 @@ All persistence flows through `JobRepository` (adopted from `lmp_scraper` persis
 
 ## 7. Configuration & `.env`
 
-Global settings via `.env` (env-first), loaded by `backend/src/config/index.ts`. Per-source config stays in `sources.config`.
+Global settings via `.env` (env-first), loaded by `backend/src/config/index.ts`. Per-source config lives in the database `sources.config` column (see `DATA_MODEL.md` §1); `sources.config` in code references the DB column, not a file. `SOURCES_CONFIG_PATH` is only a bootstrap/fallback when the DB table is unavailable.
 
 | Variable | Default | Purpose |
 |---|---|---|
@@ -159,7 +171,8 @@ Global settings via `.env` (env-first), loaded by `backend/src/config/index.ts`.
 | `PORT` | `3000` | Express API port |
 | `DATABASE_URL` | _(required)_ | DB connection string (MySQL candidate) |
 | `DB_DIALECT` | `mysql` | DB dialect |
-| `SOURCES_CONFIG_PATH` | `./config/sources.json` | Path to per-source configuration file |
+| `SOURCES_CONFIG_PATH` | `./config/sources.json` | Fallback source config file (used only if DB `sources` table is empty/unavailable) |
+| `ENABLED_SOURCES` | `` | Comma-separated list of source IDs that are enabled (e.g., `rezi-map`). All other source configuration comes from the database `sources` table. |
 | `POLL_INTERVAL_MS` | `5000` | Orchestrator polling interval |
 | `MAX_CONCURRENT_SOURCES` | `3` | Max concurrent source cycles |
 | `MAX_RETRIES` | `3` | Max attempts per cycle |

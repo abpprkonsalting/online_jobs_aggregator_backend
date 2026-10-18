@@ -175,6 +175,8 @@ Classification is performed by the source adapters (not a shared core pipeline) 
   - `stalled`: 90+ days
 - Sort order: `days_waiting` descending (oldest postings first)
 
+**Note:** Waiting time is computed at query time in the REST API layer (not during fetch/persistence). The daemon stores `posted_at`/`date_posted` only; sorting and `days_waiting` calculation happen when the API serves filtered/sorted job listings.
+
 ---
 
 ## 8. Deliverables / File Plan (High-Level)
@@ -227,4 +229,4 @@ Classification is performed by the source adapters (not a shared core pipeline) 
 
 ## 11. Next Step
 
-See `plan_backend.md` for the fetch-only backend implementation plan (orchestrator, `JobSource` adapter interface, Rezi adapter, persistence, and daemon flow). This phase covers fetching and persistence only — classification is deferred to future phases where it is adapter-specific. `plan_backend.md` does not include REST API endpoints or an Angular frontend. Scaffold the backend (Node.js + Express) following that plan, then implement the Rezi source adapter in the backend.
+See `plan_backend.md` for the backend implementation plan (orchestrator, `JobSource` adapter interface, Rezi adapter, persistence, and daemon flow). This document covers the full backend scope — fetching, persistence, normalization, and daemon flow. Classification is adapter-specific and deferred to future phases. `plan_backend.md` does not include REST API endpoints or an Angular frontend; those are tracked in later roadmap phases. Scaffold the backend (Node.js + Express) following that plan, then implement the Rezi source adapter in the backend.
