@@ -73,6 +73,8 @@ Current Rezi source fields (these are mapped by the adapter into the normalized 
 | FR-11 | Track fetch runs per source with status, timestamps, and generic metadata (`metadata` JSON). | Medium |
 | FR-12 | Apply respectful rate limiting per source with retry/backoff where applicable. | Medium |
 | FR-13 | Retain provenance/traceability (store `raw_data` and source association) for processed jobs. | Medium |
+| FR-14 | User authentication (login/refresh/logout) with role-based access control (`admin`, `user`). | Medium |
+| FR-15 | Admin endpoints to manage sources, geographic areas, master table seed, and fetch runs. | Medium |
 
 ### 3.2 Non-Functional Requirements
 
@@ -105,6 +107,12 @@ Current Rezi source fields (these are mapped by the adapter into the normalized 
 │  ┌─────────────────────────────────────────────────────────────────────┐   │
 │  │                          REST API Layer                              │   │
 │  │               Endpoints for querying, filtering, sorting jobs         │   │
+│  └─────────────────────────────────────────────────────────────────────┘   │
+│  │                                        │                                    │
+│  ┌─────────────────────────────────────────────────────────────────────┐   │
+│  │                           Auth Layer (JWT)                           │   │
+│  │  POST /api/auth/login, /api/auth/refresh, /api/auth/logout            │   │
+│  │  GET /api/auth/me, user CRUD (admin only)                            │   │
 │  └─────────────────────────────────────────────────────────────────────┘   │
 │                                        │                                    │
 │  ┌─────────────────────────────────────────────────────────────────────┐   │
@@ -195,6 +203,13 @@ Classification is performed by the source adapters (not a shared core pipeline) 
 | `frontend/` | Angular app: web UI for browsing/filtering/sorting jobs. |
 | `backend/src/sources/base/JobSource.ts` | Abstract source adapter interface (pluggable). |
 | `backend/src/sources/rezi/` | Rezi source adapter (tiles/PMTiles, IDs, details API, normalization, classification). |
+| `backend/src/api/auth.ts` | Auth routes (login, refresh, logout, me). |
+| `backend/src/api/users.ts` | User management routes (CRUD, admin only). |
+| `backend/src/api/jobs.ts` | Job list/detail endpoints. |
+| `backend/src/api/master.ts` | Master table seed/snapshot endpoints. |
+| `backend/src/api/admin.ts` | Admin endpoints (sources, areas, fetch_runs, trigger). |
+| `backend/src/middleware/auth.ts` | JWT middleware + role-based authorization (`requireAuth`, `requireRole`). |
+| `backend/src/utils/auth.ts` | Token sign/verify, bcrypt hash/verify helpers. |
 | `backend/src/pipeline/` | N/A — classification is adapter-specific; handled within each `JobSource` adapter. |
 | `backend/src/daemon/` | Periodic job fetcher for configured sources. |
 | `backend/src/db/` | Database layer, migrations, models (based on `DATA_MODEL.md`; MySQL candidate). |
@@ -210,13 +225,14 @@ Classification is performed by the source adapters (not a shared core pipeline) 
 |-------|------|-------------|
 | 1 | Define backend/frontend structure | Scaffold Node.js + Express backend and Angular frontend. |
 | 2 | Define common types/schema | Define normalized types based on `DATA_MODEL.md` and `JobSource` adapter interface (technology-agnostic contract). |
-| 3 | Implement Rezi source adapter | Port Rezi logic (tiles, PMTiles, IDs, details API) into pluggable adapter with normalization, classification, and per-source schedule (`interval_ms` in `sources.config`). |
-| 4 | Database layer | Set up database (TBD; MySQL candidate), schema/migrations, persistence logic; include `next_run_at` in `sources` table. |
-| 5 | Implement daemon | Periodic fetcher to run sources and persist results with deduplication/incremental updates. Compute adaptive global poll interval from source configs at startup. |
-| 6 | Implement REST API | Endpoints to query/filter/sort stored jobs. |
-| 7 | Implement Angular frontend | Web UI to browse, filter, and sort jobs by categories, skills, location, etc. |
-| 8 | Testing | Validate with Rezi source and verify classification, filtering, sorting, and deduplication. |
-| 9 | Documentation | Setup, usage, and architecture docs. |
+| 3 | Implement Auth layer | JWT login/refresh/logout, bcrypt password hashing, role middleware, seed admin user. |
+| 4 | Implement Rezi source adapter | Port Rezi logic (tiles, PMTiles, IDs, details API) into pluggable adapter with normalization, classification, and per-source schedule (`interval_ms` in `sources.config`). |
+| 5 | Database layer | Set up database (TBD; MySQL candidate), schema/migrations, persistence logic; include `next_run_at` in `sources` table. |
+| 6 | Implement daemon | Periodic fetcher to run sources and persist results with deduplication/incremental updates. Compute adaptive global poll interval from source configs at startup. |
+| 7 | Implement REST API | Job query endpoints, admin CRUD, master seed, auth endpoints. |
+| 8 | Implement Angular frontend | Web UI to browse, filter, and sort jobs by categories, skills, location, etc. |
+| 9 | Testing | Validate with Rezi source and verify classification, filtering, sorting, and deduplication. |
+| 10 | Documentation | Setup, usage, and architecture docs. |
 
 ---
 
@@ -232,9 +248,10 @@ Classification is performed by the source adapters (not a shared core pipeline) 
 | Source schema drift across future adapters | Follow `DATA_MODEL.md`; per-source normalization maps to the fixed normalized schema. |
 | New sources require different fetch mechanisms (e.g., scraping) | Adapter interface (`JobSource`) isolates source-specific logic from core pipeline. |
 | Technology choices TBD (DB/model) | Keep persistence layer abstracted to allow swapping (e.g., MySQL initially). |
+| Auth token theft / session fixation | HttpOnly cookies + short access token TTL; refresh token rotation with revocation; bcrypt-hashed refresh tokens in DB. |
 
 ---
 
 ## 11. Next Step
 
-See `plan_backend.md` for the backend implementation plan (orchestrator, `JobSource` adapter interface, Rezi adapter, persistence, and daemon flow). This document covers the full backend scope — fetching, persistence, normalization, and daemon flow. Classification is adapter-specific and deferred to future phases. `plan_backend.md` does not include REST API endpoints or an Angular frontend; those are tracked in later roadmap phases. Scaffold the backend (Node.js + Express) following that plan, then implement the Rezi source adapter in the backend.
+See `plan_backend.md` for the backend implementation plan (orchestrator, `JobSource` adapter interface, Rezi adapter, persistence, daemon flow, and auth layer). This document covers the full backend scope — fetching, persistence, normalization, daemon flow, and user authentication. Classification is adapter-specific and deferred to future phases. `plan_backend.md` does not include REST API endpoints or an Angular frontend; those are tracked in later roadmap phases. Scaffold the backend (Node.js + Express) following that plan, then implement the Rezi source adapter in the backend.

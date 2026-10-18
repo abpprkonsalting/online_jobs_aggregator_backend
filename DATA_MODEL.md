@@ -142,6 +142,7 @@ Core job entity.
 
 | Field | Type | Notes |
 |---|---|---|
+|---|---|---|
 | id | UUID (PK) | Internal UUID |
 | source_id | UUID (FK → sources.id) NOT NULL | Provenance |
 | external_id | VARCHAR(100) NOT NULL | Source native ID (e.g., obfuscated_id) |
@@ -161,9 +162,37 @@ Core job entity.
 | created_at | DATETIME NOT NULL | |
 | updated_at | DATETIME NOT NULL | |
 
+## 13. users
+Application users for authentication and authorization.
+
+| Field | Type | Notes |
+|---|---|---|
+| id | UUID (PK) | |
+| email | VARCHAR(255) NOT NULL UNIQUE | User email (login) |
+| password_hash | VARCHAR(255) NOT NULL | bcrypt hash |
+| role | ENUM('admin','user') NOT NULL DEFAULT 'user' | Permission level |
+| is_active | TINYINT(1) DEFAULT 1 | Whether account is active |
+| last_login_at | DATETIME NULL | Last successful login timestamp |
+| created_at | DATETIME NOT NULL | |
+| updated_at | DATETIME NOT NULL | |
+
+## 14. refresh_tokens
+Secure refresh tokens for JWT rotation (httpOnly cookies).
+
+| Field | Type | Notes |
+|---|---|---|
+| id | UUID (PK) | |
+| user_id | UUID (FK → users.id) NOT NULL | Owning user |
+| token_hash | VARCHAR(255) NOT NULL | bcrypt hash of token |
+| expires_at | DATETIME NOT NULL | When token expires |
+| revoked_at | DATETIME NULL | When token was revoked (logout) |
+| created_at | DATETIME NOT NULL | |
+
 Constraints/Indexes:
 - UNIQUE (source_id, external_id)
 - INDEX (posted_at, date_posted)
 - INDEX (organization, allow_remote)
+- INDEX (users.email)
+- UNIQUE (refresh_tokens.user_id) WHERE revoked_at IS NULL
 
 *Notes:* `days_waiting` is omitted as it can be computed from `posted_at`/`date_posted`. Skills are stored in normalized form via `job_skills`/`skills` for efficient querying.

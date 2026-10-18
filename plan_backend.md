@@ -18,7 +18,26 @@ This document details the backend implementation based on the modular architectu
 ## 2. Architecture Overview
 
 ```
-Backend Daemon (Node.js + Express)
+Backend (Node.js + Express)
+    │
+    ├── Auth Layer (JWT + bcrypt)
+    │   ├── POST /api/auth/login — validate credentials, issue access + refresh tokens
+    │   ├── POST /api/auth/refresh — rotate access token via refresh token
+    │   ├── POST /api/auth/logout — revoke refresh token
+    │   ├── GET /api/auth/me — current user profile + role
+    │   ├── POST /api/users — create user (admin only)
+    │   ├── PATCH /api/users/:id — update user/role (admin only)
+    │   └── DELETE /api/users/:id — deactivate user (admin only)
+    │
+    ├── REST API Layer
+    │   ├── (public) GET /api/jobs — list/filter/sort jobs
+    │   ├── (public) GET /api/jobs/:id — single job detail
+    │   ├── (public) GET /api/categories, /api/skills, /api/cities, /api/countries
+    │   ├── (admin) CRUD on /api/sources, /api/geographic-areas, /api/areas
+    │   ├── (admin) GET /api/fetch-runs, GET /api/fetch-runs/:source_id
+    │   ├── (admin) POST /api/trigger
+    │   ├── (admin) GET /api/master/schema, POST /api/master/seed-*
+    │   └── Auth layer wraps everything below (except /api/auth/* and /api/jobs reads for users)
     │
     ├── Orchestrator (RxJS-style: interval, fire & forget)
     │   ├── loads config from .env (exclusively), including enabled sources.
@@ -174,7 +193,207 @@ All persistence flows through `JobRepository` (adopted from `lmp_scraper` persis
 
 ---
 
-## 7. Configuration & `.env`
+## 7. REST API Layer
+
+The Express API exposes two surfaces:
+
+### 7.1 Job Query & Read (public)
+
+| Endpoint | Method | Purpose |
+|---|---|---|
+| `GET /api/jobs` | GET | List jobs with filters (`category`, `skill`, `city_id`, `country_id`, `source_id`, `allow_remote`, `salary_min`, `salary_max`, `organization`) and sorting (`days_waiting_desc`, `date_posted_desc`, etc.); paginated via `limit`/`offset`. |
+| `GET /api/jobs/:id` | GET | Single job detail including computed `days_waiting`, `categories[]` (name + confidence), `skills[]`, `locations[]` (city, country, raw_text). |
+| `GET /api/categories` | GET | All categories with `count` (jobs per category) for filter dropdowns. |
+| `GET /api/skills` | GET | All skills with `count`. |
+| `GET /api/cities` | GET | All cities with `count`. |
+| `GET /api/countries` | GET | All countries with `count`. |
+
+**Waiting time** (`days_waiting`) is computed at query time in the API layer (not during fetch/persistence): `(current_utc_date − posted_at or date_posted).days`.
+
+### 7.2 Admin / Configuration
+
+| Endpoint | Method | Purpose |
+|---|---|---|
+| `GET /api/sources` | GET | List source configs (type, name, enabled, last_run_at, next_run_at). |
+| `POST /api/sources` | POST | Create a new source config. |
+| `PATCH /api/sources/:id` | PATCH | Update source config (name, type, config, enabled, interval_ms/cron). |
+| `DELETE /api/sources/:id` | DELETE | Disable source (`enabled=0`). |
+| `GET /api/geographic-areas` | GET | List geographic area definitions (name, bbox, zoom, enabled). |
+| `POST /api/geographic-areas` | POST | Create a geographic area. |
+| `PUT /api/geographic-areas/:id` | PUT | Update a geographic area. |
+| `DELETE /api/geographic-areas/:id` | DELETE | Delete an area (unless referenced by `source_geographic_areas`). |
+| `GET /api/areas` | GET | List source↔area link matrix `(source_id, geographic_area_id, enabled)`. |
+| `POST /api/areas` | POST | Link (upsert) a source to an area. |
+| `DELETE /api/areas/:source_id/:area_id` | DELETE | Unlink a source from an area. |
+| `GET /api/fetch-runs` | GET | List recent fetch runs (status, timestamps, counters, metadata, warnings). |
+| `GET /api/fetch-runs/:source_id` | GET | Fetch runs for a specific source. |
+| `POST /api/trigger` | POST | Manually trigger an immediate fetch cycle (optional `source_id`/`geographic_area_id` scope). |
+
+### 7.3 Master Table Seed (frontend bootstrap)
+
+Master tables (`skills`, `cities`, `countries`, `categories`, `geographic_areas`) are frontend-owned — the fetch pipeline never creates/updates/deletes them. These endpoints exist for initial data seeding only:
+
+| Endpoint | Method | Purpose |
+|---|---|---|
+| `GET /api/master/schema` | GET | Return current master-table contents for frontend sync. |
+| `POST /api/master/seed-skills` | POST | Bulk insert `{name, slug}` into `skills`. |
+| `POST /api/master/seed-cities` | POST | Bulk insert `{country_id, name}` into `cities`. |
+| `POST /api/master/seed-countries` | POST | Bulk insert `{name, code}` into `countries`. |
+| `POST /api/master/seed-categories` | POST | Bulk insert `{name, slug}` into `categories`. |
+
+### 7.4 Response Shapes
+
+- **Job list item:** `id, source_id, external_id, title, organization, job_url, description_text, allow_remote, salary_min, salary_max, salary_currency, salary_unit, date_posted, posted_at, fetched_at, skills[], locations[]`
+- **Job detail:** same as list item plus `categories[]` (with `classification_confidence`) and computed `days_waiting`
+- **Fetch run:** `id, source_id, status, started_at, finished_at, jobs_found, jobs_saved_new, jobs_saved_updated, error_message, metadata, warnings, created_at`
+- **Auth user:** `id, email, role, is_active`
+
+---
+
+## 8. Auth Layer (JWT)
+
+Authentication and authorization for the Express API. Stateless JWT access tokens + httpOnly refresh tokens rotated via DB.
+
+### 8.1 Libraries
+- **`jsonwebtoken`** — sign/verify JWTs (HS256).
+- **`express-jwt`** — Express middleware to validate JWT and populate `req.auth`.
+- **`bcryptjs`** — hash/verify passwords and refresh tokens.
+
+### 8.2 Endpoints
+
+| Endpoint | Method | Purpose |
+|---|---|---|
+| `POST /api/auth/login` | POST | Validate `email`+`password`, issue access token (short-lived) and refresh token (long-lived, httpOnly cookie). |
+| `POST /api/auth/refresh` | POST | Rotate access token using valid refresh token from httpOnly cookie; revoke old refresh token, issue new one. |
+| `POST /api/auth/logout` | POST | Revoke current refresh token. |
+| `GET /api/auth/me` | GET | Return current user profile (`id`, `email`, `role`). Requires valid access token. |
+| `POST /api/users` | POST | Create user (`email`, `password`, `role`). Admin only. |
+| `PATCH /api/users/:id` | PATCH | Update user role / active status. Admin only. |
+| `DELETE /api/users/:id` | DELETE | Deactivate user (`is_active=0`). Admin only. |
+
+### 8.3 Authorization Rules
+
+| Endpoint group | Required role |
+|---|---|
+| `GET /api/auth/me`, `POST /api/auth/logout` | any authenticated user (`user` or `admin`) |
+| `GET /api/jobs`, `GET /api/jobs/:id`, `GET /api/categories|skills|cities|countries` | any authenticated user |
+| `POST/PATCH/DELETE /api/sources`, `POST/PUT/DELETE /api/geographic-areas`, `POST/DELETE /api/areas`, `GET /api/fetch-runs`, `POST /api/trigger` | `admin` |
+| `GET /api/master/schema`, `POST /api/master/seed-*` | `admin` |
+| User management (`/api/users/*`) | `admin` |
+
+### 8.4 v1 Scope
+- Single admin user seeded at DB init via `.env` (`ADMIN_EMAIL`, `ADMIN_PASSWORD`).
+- No registration endpoint — user creation via admin panel or DB directly.
+- No password reset flow — admin resets manually in DB.
+- Roles: `admin` and `user` only (`viewer` reserved for future).
+
+---
+
+## 9. Configuration & `.env`
+
+Global settings via `.env` (env-first), loaded by `backend/src/config/index.ts`. Per-source config lives in the database `sources.config` column (see `DATA_MODEL.md` §1); `sources.config` in code references the DB column, not a file. `SOURCES_CONFIG_PATH` is only a bootstrap/fallback when the DB table is unavailable.
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `NODE_ENV` | `development` | Runtime mode |
+| `PORT` | `3000` | Express API port |
+| `DATABASE_URL` | _(required)_ | DB connection string (MySQL candidate) |
+| `DB_DIALECT` | `mysql` | DB dialect |
+| `SOURCES_CONFIG_PATH` | `./config/sources.json` | Fallback source config file (used only if DB `sources` table is empty/unavailable) |
+| `ENABLED_SOURCES` | `` | Comma-separated list of source IDs that are enabled (e.g., `rezi-map`). All other source configuration comes from the database `sources` table. |
+| `POLL_INTERVAL_MS` | `5000` | Global poll interval. Computed at startup as `MIN(source interval_ms) / 10`, capped by this default. Ensures no source can miss its scheduled run. |
+| `MAX_CONCURRENT_SOURCES` | `3` | Max concurrent source cycles |
+| `MAX_RETRIES` | `3` | Max attempts per cycle |
+| `RETRY_DELAY_MS` | `60000` | Delay between retries (fixed; exponential preferred for network errors) |
+| `API_TIMEOUT_MS` | `30000` | Default HTTP timeout for adapters |
+| `LOG_LEVEL` | `info` | Minimum log level |
+| `LOG_DIR` | `./logs` | Local log directory |
+| `LOGGERS` | `["console","local"]` | Active log drivers (`console`, `local`, `db`) |
+| `CACHE_DIR` | `./cache` | Adapter/cache directory |
+| `FETCH_TIMEOUT_MS` | `1800000` | Wall-clock cap per cycle (30m) |
+| `STALLED_THRESHOLD_MS` | `3600000` | Heartbeat staleness threshold (1h); must be >= `FETCH_TIMEOUT_MS` |
+| `JWT_SECRET` | _(required)_ | Secret for signing access + refresh JWTs (HS256) |
+| `JWT_ACCESS_EXPIRES_IN` | `15m` | Access token TTL |
+| `JWT_REFRESH_EXPIRES_IN` | `7d` | Refresh token TTL |
+| `COOKIE_DOMAIN` | `` | Cookie domain (optional) |
+| `ADMIN_EMAIL` | _(required)_ | Seed admin email at DB init |
+| `ADMIN_PASSWORD` | _(required)_ | Seed admin password at DB init |
+
+---
+
+## 10. Deliverables (Files)
+
+| File | Purpose |
+|---|---|
+| `backend/src/orchestrator/JobOrchestrator.ts` | RxJS-style daemon loop, fire & forget, stalled detection, graceful shutdown |
+| `backend/src/sources/base/JobSource.ts` | Adapter interface, types (`FetchResult`, `FetchRunMetrics`, context) |
+| `backend/src/sources/base/JobSourceFactory.ts` | Factory mapping source type/name → concrete adapter |
+| `backend/src/sources/rezi/ReziJobSource.ts` | Rezi adapter (PMTiles + details API, raw payload + `raw_data`) |
+| `backend/src/sources/rezi/pmtiles.ts` | PMTiles parsing/utilities (header/directory, ranges, gzip) |
+| `backend/src/transform/` | Adapted transform ETL engine wired to `JobRepository`; per-adapter `transform_config` (Rezi) |
+| `backend/src/transform/rezi.transform.json` | Rezi per-adapter transform_config mapping declaration |
+| `backend/src/persistence/JobRepository.ts` | DB abstraction: upsert/sync/diff, fetch_runs operations |
+| `backend/src/api/` | REST API routes/controllers (Express) |
+| `backend/src/api/auth.ts` | Auth routes (login, refresh, logout, me) |
+| `backend/src/api/users.ts` | User management routes (CRUD, admin only) |
+| `backend/src/api/jobs.ts` | Job list/detail endpoints |
+| `backend/src/api/master.ts` | Master table seed/snapshot endpoints |
+| `backend/src/api/admin.ts` | Admin endpoints (sources, areas, fetch_runs, trigger) |
+| `backend/src/middleware/auth.ts` | JWT middleware + role-based authorization (`requireAuth`, `requireRole`) |
+| `backend/src/utils/auth.ts` | Token sign/verify, bcrypt hash/verify helpers |
+| `backend/src/config/index.ts` | Env-first config (`CONFIG`) with defaults + bootstrap |
+| `backend/src/utils/logger.ts` | Multi-driver logger |
+| `backend/src/utils/rate-limiter.ts` | Per-source pacing helper |
+| `backend/src/types/normalized.ts` | Normalized types aligned with `DATA_MODEL.md` |
+| `backend/src/config/sourceLoader.ts` | Source loading (DB/fallback) |
+| `backend/src/daemon/index.ts` | Daemon entrypoint |
+| `backend/.env` / `backend/.env.example` | Environment variables |
+| `plan_backend.md` | This document |
+
+---
+
+## 11. Implementation Notes (Alignment with PLAN.md)
+
+- **FR-01:** pluggable `JobSource` adapters, source-agnostic core.
+- **FR-04:** REST API + Angular web interface to query, filter, sort jobs (§7).
+- **FR-08:** `days_waiting` computed at query time in the API layer.
+- **FR-09:** filtering by categories, skills, location/country/city, remote, salary, organization (§7.1).
+- **FR-02:** normalized persistence with provenance (`source_id`, `external_id`), dedup via upsert/sync, `raw_data` preserved.
+- **FR-10:** configurable sources via `sources.config` + env-first globals.
+- **FR-11:** `fetch_runs` with status, timestamps, counters, `metadata`, `error_message`.
+- **NF-01/NF-02:** core agnostic; normalization via transform engine + per-adapter `transform_config`; classification is adapter-specific.
+- **Retries/backoff:** execution-level retries per `MAX_RETRIES`/`RETRY_DELAY_MS`; per-source `api_delay` and `retry` config in `sources.config`.
+- **PMTiles:** missing tiles treated as empty; `max_tiles` safety cap (per-source config, not global `.env`); gzip decompression; range requests.
+- **Concurrency/stalled:** `MAX_CONCURRENT_SOURCES` concurrency cap; stalled detection uses `FETCH_TIMEOUT_MS`/`STALLED_THRESHOLD_MS`; poll interval computed at startup guarantees no source misses its schedule.
+- **Auth:** stateless JWT access tokens + httpOnly refresh tokens rotated via DB; role-based access control (`admin`/`user`).
+
+---
+
+## 12. Testing & Validation
+
+- **Adapter:** PMTiles parsing, tile→IDs, batching (<=9), raw payload includes `raw_data` + `external_id`.
+- **Transform:** Rezi `transform_config` maps raw records to normalized entities (jobs, skills, job_skills, locations, cities, countries); upsert by `(source_id,external_id)` works across runs; skills/locations created/linked correctly.
+- **Persistence:** `upsert`/`sync` + `calculateDiff` give correct `jobs_saved_new`/`jobs_saved_updated`; orphans handled by sync. Master tables never modified by pipeline.
+- **Orchestrator:** polling loop, fire & forget, concurrency cap, stalled detection, graceful shutdown.
+- **Resilience:** missing tiles empty; batch failure logged with warnings, cycle continues; retries/backoff respected.
+- **Metrics:** `fetch_runs.metadata` = acquisition metrics; counters accurate.
+- **API:** `GET /api/jobs` filtering/sorting/pagination; `days_waiting` computation; admin CRUD for sources and areas; master seed endpoints return correct shapes.
+- **Auth:** `POST /api/auth/login` issues access+refresh; `POST /api/auth/refresh` rotates tokens; `POST /api/auth/logout` revokes refresh; role enforcement on admin endpoints; unauthenticated requests return 401.
+
+---
+
+## 13. Next Steps
+
+1. Define types: `JobSource`, `FetchResult`, `FetchRunMetrics`, context, source config, auth (user, token).
+2. Scaffold orchestrator + `JobRepository` + config + logger + rate limiter.
+3. Implement auth layer (`/api/auth/*`, `/api/users/*`, JWT middleware, role guards).
+4. Adapt the `lmp_scraper` transform ETL engine to `JobRepository` (replace Supabase persistence).
+5. Author Rezi `transform_config` (jobs, skills, job_skills, locations, cities, countries) per §5.2.
+6. Implement `ReziJobSource` + PMTiles utilities (raw payload only).
+7. Implement REST API layer (§7): routes/controllers for jobs, master, admin.
+8. Wire daemon entrypoint and bootstrap (DB/fallback), including seed admin user from `.env`.
+9. Run fetching cycle against Rezi (small bbox), validate dedup + normalized persistence + `fetch_runs` metadata.
+10. Add per-source `retry`/pacing, finalize graceful shutdown, and prepare for future sources.
 
 Global settings via `.env` (env-first), loaded by `backend/src/config/index.ts`. Per-source config lives in the database `sources.config` column (see `DATA_MODEL.md` §1); `sources.config` in code references the DB column, not a file. `SOURCES_CONFIG_PATH` is only a bootstrap/fallback when the DB table is unavailable.
 
@@ -200,7 +419,7 @@ Global settings via `.env` (env-first), loaded by `backend/src/config/index.ts`.
 
 ---
 
-## 8. Deliverables (Files)
+## 9. Deliverables (Files)
 
 | File | Purpose |
 |---|---|
@@ -212,6 +431,10 @@ Global settings via `.env` (env-first), loaded by `backend/src/config/index.ts`.
 | `backend/src/transform/` | Adapted transform ETL engine wired to `JobRepository`; per-adapter `transform_config` (Rezi) |
 | `backend/src/transform/rezi.transform.json` | Rezi per-adapter transform_config mapping declaration |
 | `backend/src/persistence/JobRepository.ts` | DB abstraction: upsert/sync/diff, fetch_runs operations |
+| `backend/src/api/` | REST API routes/controllers (Express) |
+| `backend/src/api/jobs.ts` | Job list/detail endpoints |
+| `backend/src/api/master.ts` | Master table seed/snapshot endpoints |
+| `backend/src/api/admin.ts` | Admin endpoints (sources, areas, fetch_runs, trigger) |
 | `backend/src/config/index.ts` | Env-first config (`CONFIG`) with defaults + bootstrap |
 | `backend/src/utils/logger.ts` | Multi-driver logger |
 | `backend/src/utils/rate-limiter.ts` | Per-source pacing helper |
@@ -223,9 +446,12 @@ Global settings via `.env` (env-first), loaded by `backend/src/config/index.ts`.
 
 ---
 
-## 9. Implementation Notes (Alignment with PLAN.md)
+## 10. Implementation Notes (Alignment with PLAN.md)
 
 - **FR-01:** pluggable `JobSource` adapters, source-agnostic core.
+- **FR-04:** REST API + Angular web interface to query, filter, sort jobs (§7).
+- **FR-08:** `days_waiting` computed at query time in the API layer.
+- **FR-09:** filtering by categories, skills, location/country/city, remote, salary, organization (§7.1).
 - **FR-02:** normalized persistence with provenance (`source_id`, `external_id`), dedup via upsert/sync, `raw_data` preserved.
 - **FR-10:** configurable sources via `sources.config` + env-first globals.
 - **FR-11:** `fetch_runs` with status, timestamps, counters, `metadata`, `error_message`.
@@ -236,24 +462,26 @@ Global settings via `.env` (env-first), loaded by `backend/src/config/index.ts`.
 
 ---
 
-## 10. Testing & Validation
+## 11. Testing & Validation
 
 - **Adapter:** PMTiles parsing, tile→IDs, batching (<=9), raw payload includes `raw_data` + `external_id`.
 - **Transform:** Rezi `transform_config` maps raw records to normalized entities (jobs, skills, job_skills, locations, cities, countries); upsert by `(source_id,external_id)` works across runs; skills/locations created/linked correctly.
-- **Persistence:** `upsert`/`sync` + `calculateDiff` give correct `jobs_saved_new`/`jobs_saved_updated`; orphans handled by sync.
+- **Persistence:** `upsert`/`sync` + `calculateDiff` give correct `jobs_saved_new`/`jobs_saved_updated`; orphans handled by sync. Master tables never modified by pipeline.
 - **Orchestrator:** polling loop, fire & forget, concurrency cap, stalled detection, graceful shutdown.
 - **Resilience:** missing tiles empty; batch failure logged with warnings, cycle continues; retries/backoff respected.
 - **Metrics:** `fetch_runs.metadata` = acquisition metrics; counters accurate.
+- **API:** `GET /api/jobs` filtering/sorting/pagination; `days_waiting` computation; admin CRUD for sources and areas; master seed endpoints return correct shapes.
 
 ---
 
-## 11. Next Steps
+## 12. Next Steps
 
 1. Define types: `JobSource`, `FetchResult`, `FetchRunMetrics`, context, source config.
 2. Scaffold orchestrator + `JobRepository` + config + logger + rate limiter.
 3. Adapt the `lmp_scraper` transform ETL engine to `JobRepository` (replace Supabase persistence).
 4. Author Rezi `transform_config` (jobs, skills, job_skills, locations, cities, countries) per §5.2.
 5. Implement `ReziJobSource` + PMTiles utilities (raw payload only).
-6. Wire daemon entrypoint and bootstrap (DB/fallback).
-7. Run fetching cycle against Rezi (small bbox), validate dedup + normalized persistence + `fetch_runs` metadata.
-8. Add per-source `retry`/pacing, finalize graceful shutdown, and prepare for future sources.
+6. Implement REST API layer (§7): routes/controllers for jobs, master, admin.
+7. Wire daemon entrypoint and bootstrap (DB/fallback).
+8. Run fetching cycle against Rezi (small bbox), validate dedup + normalized persistence + `fetch_runs` metadata.
+9. Add per-source `retry`/pacing, finalize graceful shutdown, and prepare for future sources.
