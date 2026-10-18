@@ -31,6 +31,7 @@ Track daemon runs per source.
 | jobs_saved_updated | INT DEFAULT 0 | Existing jobs updated |
 | error_message | TEXT NULL | Error details if failed |
 | metadata | JSON NULL | Source-specific run metadata (e.g., tiles/ids/batches for Rezi; metrics for scraping) to avoid losing data without polluting core fields |
+| warnings | JSON NULL | Warnings from adapter execution (e.g., batch failures, non-fatal issues) |
 | created_at | DATETIME NOT NULL | |
 
 ## 3. countries

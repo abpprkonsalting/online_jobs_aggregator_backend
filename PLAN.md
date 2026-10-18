@@ -135,9 +135,8 @@ Current Rezi source fields (these are mapped by the adapter into the normalized 
 - **REST API Layer**: Exposes endpoints to query, filter, and sort jobs stored in the database.
 - **Source Adapters (pluggable)**: Modular adapters implementing a common interface (`JobSource`). Each adapter encapsulates source-specific logic (API calls, scraping, etc.). First adapter: Rezi map.
   - `sources/base/JobSource` (interface/contract)
-  - `sources/rezi/` — Rezi implementation (tiles/PMTiles parsing, ID extraction, details API, normalization)
-- **Core Pipeline**: Normalization to a common schema, classification into categories (with confidence), waiting-time calculation, and sorting — independent of any specific source.
-- **Job Fetcher Daemon**: Background process that periodically runs configured source adapters, processes results through the pipeline, and persists normalized job records to the database. Handles deduplication and incremental updates per source.
+  - `sources/rezi/` — Rezi implementation (tiles/PMTiles parsing, ID extraction, details API, normalization, classification)- **Classification (adapter-specific)**: Each `JobSource` adapter classifies jobs into categories (`categories`/`job_categories` with confidence) using its own internal method. The adapter's output includes category assignments.
+- **Job Fetcher Daemon**: Background process that periodically runs configured source adapters, persists normalized job records to the database. Handles deduplication and incremental updates per source.
 - **Database Layer**: Persistence for jobs, sources, fetch runs, locations, categories, skills, etc. as defined in `DATA_MODEL.md`. Database and schema are TBD (MySQL candidate).
 
 ---
@@ -152,20 +151,20 @@ Current Rezi source fields (these are mapped by the adapter into the normalized 
    c. Tile fetch: Range requests → gzip-decompressed tile bytes
    d. ID extraction: Tile bytes → set of `obfuscated_id` ints
    e. API batching: ID set → batches of 9 → POST requests → raw job records
-4. **Normalization**: Raw job records → normalized schema (per `DATA_MODEL.md`) via source-specific normalizer.
-5. **Processing**: Classify into categories (many-to-many) with confidence; compute waiting time from `posted_at`/`date_posted`; sort by waiting time.
+4. **Normalization**: Raw job records → normalized schema (per `DATA_MODEL.md`) via transform engine / source-specific normalizer.
+5. **Classification** (adapter-specific): Each adapter assigns categories (many-to-many) with confidence via its own internal method.
 6. **Persistence**: Store normalized job records and relevant metadata in the database (deduplication/incremental updates).
 7. **User access**: Frontend (Angular) queries REST API → Backend reads from database → Filtered, sorted results returned to UI.
 
 ---
 
-## 6. Classification Logic (FR-08)
+## 6. Classification Logic (FR-05)
 
-Classification is performed by source adapters/pipeline into categories (many-to-many). For the first phase, the "programming" category uses normalized `skills`, `title`, and `description_text` to determine relevance. The adapter maps source-specific signals (e.g., Rezi's `ai_key_skills`) into normalized `skills`.
+Classification is performed by the source adapters (not a shared core pipeline) into categories (many-to-many). Each adapter has its own internal classification method. For the first phase, the Rezi adapter uses normalized `skills` (mapped from `ai_key_skills`), `title`, and `description_text` to determine category relevance and assign per-assignment confidence.
 
 ---
 
-## 7. Waiting Time Calculation (FR-09)
+## 7. Waiting Time Calculation (FR-08)
 
 - `days_waiting` = `(current_utc_date − posted_at/date_posted).days`
 - Categories (optional labels):
@@ -182,11 +181,11 @@ Classification is performed by source adapters/pipeline into categories (many-to
 
 | Component | Purpose |
 |-----------|---------|
-| `backend/` | Node.js + Express app: REST API, source adapters, pipeline, daemon, database models (TBD). |
+| `backend/` | Node.js + Express app: source adapters, daemon, database models (TBD). |
 | `frontend/` | Angular app: web UI for browsing/filtering/sorting jobs. |
 | `backend/src/sources/base/JobSource.ts` | Abstract source adapter interface (pluggable). |
-| `backend/src/sources/rezi/` | Rezi source adapter (tiles/PMTiles, IDs, details API, normalization). |
-| `backend/src/pipeline/` | Normalization, classification into categories, waiting-time calculation, sorting logic (source-agnostic). |
+| `backend/src/sources/rezi/` | Rezi source adapter (tiles/PMTiles, IDs, details API, normalization, classification). |
+| `backend/src/pipeline/` | N/A — classification is adapter-specific; handled within each `JobSource` adapter. |
 | `backend/src/daemon/` | Periodic job fetcher for configured sources. |
 | `backend/src/db/` | Database layer, migrations, models (based on `DATA_MODEL.md`; MySQL candidate). |
 | `backend/src/api/` | REST API routes/controllers. |
@@ -202,13 +201,12 @@ Classification is performed by source adapters/pipeline into categories (many-to
 | 1 | Define backend/frontend structure | Scaffold Node.js + Express backend and Angular frontend. |
 | 2 | Define common types/schema | Define normalized types based on `DATA_MODEL.md` and `JobSource` adapter interface (technology-agnostic contract). |
 | 3 | Implement Rezi source adapter | Port Rezi logic (tiles, PMTiles, IDs, details API) into pluggable adapter with normalization. |
-| 4 | Implement core pipeline | Classification into categories (with confidence), waiting-time calculation, sorting. |
-| 5 | Database layer | Set up database (TBD; MySQL candidate), schema/migrations, persistence logic. |
-| 6 | Implement daemon | Periodic fetcher to run sources and persist results with deduplication/incremental updates. |
-| 7 | Implement REST API | Endpoints to query/filter/sort stored jobs. |
-| 8 | Implement Angular frontend | Web UI to browse, filter, and sort jobs by categories, skills, location, etc. |
-| 9 | Testing | Validate with Rezi source and verify classification, filtering, sorting, and deduplication. |
-| 10 | Documentation | Setup, usage, and architecture docs. |
+| 4 | Database layer | Set up database (TBD; MySQL candidate), schema/migrations, persistence logic. |
+| 5 | Implement daemon | Periodic fetcher to run sources and persist results with deduplication/incremental updates. |
+| 6 | Implement REST API | Endpoints to query/filter/sort stored jobs. |
+| 7 | Implement Angular frontend | Web UI to browse, filter, and sort jobs by categories, skills, location, etc. |
+| 8 | Testing | Validate with Rezi source and verify classification, filtering, sorting, and deduplication. |
+| 9 | Documentation | Setup, usage, and architecture docs. |
 
 ---
 
@@ -229,4 +227,4 @@ Classification is performed by source adapters/pipeline into categories (many-to
 
 ## 11. Next Step
 
-See `PLAN_backend.md` for the detailed backend implementation plan (fetch-only phase: orchestrator, `JobSource` adapter interface, Rezi adapter, persistence, and daemon flow). Scaffold backend (Node.js + Express) and frontend (Angular) following that plan, then implement the Rezi source adapter in the backend.
+See `plan_backend.md` for the fetch-only backend implementation plan (orchestrator, `JobSource` adapter interface, Rezi adapter, persistence, and daemon flow). This phase covers fetching and persistence only — classification is deferred to future phases where it is adapter-specific. `plan_backend.md` does not include REST API endpoints or an Angular frontend. Scaffold the backend (Node.js + Express) following that plan, then implement the Rezi source adapter in the backend.

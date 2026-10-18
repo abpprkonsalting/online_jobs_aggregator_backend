@@ -20,7 +20,7 @@ This document details the backend implementation based on the modular architectu
 ```
 Backend Daemon (Node.js + Express)
     │
-    ├── Orchestrator (RxJS-style: interval + exhaustMap, fire & forget)
+    ├── Orchestrator (RxJS-style: interval, fire & forget)
     │   ├── loads config from .env (exclusively), including enabled sources.
     │   ├── tracks in-flight cycles (heartbeat/stalled detection)
     │   ├── applies concurrency limit (MAX_CONCURRENT_SOURCES)
@@ -50,18 +50,19 @@ The daemon uses a **RxJS-style lifecycle** (following `lmp_scraper`'s approach) 
 
 ### 3.1 Behavior
 - **Configuration**: global configuration is read exclusively from `.env` (`config/index.ts`).
-- Polling loop: immediately run on start, then every `POLL_INTERVAL_MS` (`interval` + `exhaustMap`).
+- Polling loop: immediately run on start, then every `POLL_INTERVAL_MS` (interval).
 - Fire & forget: cycles do not block the loop; in-flight cycles tracked in memory.
 - Concurrency: max concurrent source cycles = `MAX_CONCURRENT_SOURCES` (env).
-- Stalled detection: heartbeat based on `fetch_runs.updated_at`; cycles exceeding `STALLED_THRESHOLD_MS` are marked failed and their slots freed.
+- Stalled detection: cycles exceeding `FETCH_TIMEOUT_MS` are aborted and marked failed; `STALLED_THRESHOLD_MS` must be >= `FETCH_TIMEOUT_MS` to avoid false stalls.
 - Retries: up to `MAX_RETRIES` per cycle (env); fixed `RETRY_DELAY_MS` with preference for exponential backoff on network errors (configurable per-source in `sources.config.retry`).
 - Graceful shutdown: on `SIGINT`/`SIGTERM`, stop the loop, await in-flight cycles, call adapter `cleanup()` (if present), close DB/infra.
 
 ### 3.2 Execution flow per cycle
 1. Load global configuration from `.env` (only).
+2. Discover enabled sources from `sources.config`.
 3. Adapter: `adapter.fetch()` → returns `FetchResult{ rawJobs, metrics(acquisition only), metadata, warnings }` (raw, no normalization).
-4. Transform: run transform engine with the adapter's `transform_config` over `rawJobs` → produces normalized entities (jobs, skills, job_skills, locations, cities, countries, categories, job_categories); persist via `JobRepository` with upsert/sync and dedup by `(source_id, external_id)`.
-5. Aggregate: `jobs_found = rawJobs.length`, compute `jobs_saved_new`/`jobs_saved_updated` from transform run.
+4. Transform: run transform engine with the adapter's `transform_config` over `rawJobs` → produces normalized entities (jobs, skills, job_skills, locations, cities, countries); persist via `JobRepository` with upsert/sync and dedup by `(source_id, external_id)`.
+5. Aggregate: `jobs_found = rawJobs.length`, compute `jobs_saved_new`/`jobs_saved_updated` from transform run; set `jobs.fetched_at` on persisted jobs.
 6. Finalize: write `fetch_runs` as `success|failed`, set `finished_at`, store counters, `metadata = adapter.metadata`, `error_message` if failed; update `sources.last_run_at`.
 7. Continue to other sources on failure (per-source isolation).
 
@@ -94,7 +95,6 @@ export interface JobSourceContext {
 export abstract class JobSource {
   constructor(protected ctx: JobSourceContext) {}
   abstract fetch(): Promise<FetchResult>;
-  prepare?(): Promise<void>;
   cleanup?(): Promise<void>;
 }
 ```
@@ -106,6 +106,7 @@ export abstract class JobSource {
 - Rate limiting, retries/backoff (per `sources.config`) enforced inside adapter.
 - Treat missing/empty resources (e.g., absent tiles) as empty results (no error).
 - Provenance (`source_id`) attached by orchestrator.
+- Classification into `categories`/`job_categories` is performed by the adapter; the adapter's output must include category assignments that the `transform_config` maps.
 
 ---
 
@@ -114,7 +115,7 @@ export abstract class JobSource {
 Normalization is performed by the **transform ETL engine** adapted from `lmp_scraper` (never inline in adapters). This is adopted now for the fetching phase.
 
 ### 5.1 Design
-- **Per-adapter `transform_config`** (declarative JSON) declares how raw source records map to `DATA_MODEL.md` entities: `jobs`, `skills`, `job_skills`, `countries`, `cities`, `locations`, `categories`, `job_categories`.
+- **Per-adapter `transform_config`** (declarative JSON) declares how raw source records map to `DATA_MODEL.md` entities: `jobs`, `skills`, `job_skills`, `countries`, `cities`, `locations`. Classification into `categories`/`job_categories` is the responsibility of the specific adapter, not the transform engine.
 - **Pipeline (same as lmp_scraper v3):** `map_fields` → `resolve_relations` → `validate` → `deduplicate` → `persist`.
 - **Parent/child ordering** and `sourceArray` expansion supported (e.g., `ai_key_skills` as array → `skills` + `job_skills`).
 - **Resolvers:** e.g., `entity_lookup_auto` to resolve/create countries/cities/skills; supports auto-create where appropriate.
@@ -123,7 +124,7 @@ Normalization is performed by the **transform ETL engine** adapted from `lmp_scr
 
 ### 5.2 Rezi mapping (to be authored now)
 - `external_id` ← `String(obfuscated_id)`
-- `jobs`: title, organization, job_url, description_text, `allow_remote` ← `remote_derived`, salary fields (min/max/currency/unit), timestamps (`date_posted`/`posted_at`) normalized to DATETIME (via `date_parse` if needed)
+- `jobs`: title, organization, job_url, description_text, `allow_remote` ← `remote_derived`, salary fields (min/max/currency/unit), `date_posted` (original source timestamp, parsed to DATETIME), `posted_at` (derived/computed normalized timestamp)
 - `skills` + `job_skills`: from `ai_key_skills` array (sourceArray + entity_lookup_auto)
 - `locations`/`cities`/`countries`: from location signals (via resolvers; `raw_text` stored in `locations`)
 - `raw_data` kept for every job
@@ -158,7 +159,7 @@ Global settings via `.env` (env-first), loaded by `backend/src/config/index.ts`.
 | `PORT` | `3000` | Express API port |
 | `DATABASE_URL` | _(required)_ | DB connection string (MySQL candidate) |
 | `DB_DIALECT` | `mysql` | DB dialect |
-| `SOURCES_CONFIG_PATH` | `./config/sources.json` |  |
+| `SOURCES_CONFIG_PATH` | `./config/sources.json` | Path to per-source configuration file |
 | `POLL_INTERVAL_MS` | `5000` | Orchestrator polling interval |
 | `MAX_CONCURRENT_SOURCES` | `3` | Max concurrent source cycles |
 | `MAX_RETRIES` | `3` | Max attempts per cycle |
@@ -169,7 +170,7 @@ Global settings via `.env` (env-first), loaded by `backend/src/config/index.ts`.
 | `LOGGERS` | `["console","local"]` | Active log drivers (`console`, `local`, `db`) |
 | `CACHE_DIR` | `./cache` | Adapter/cache directory |
 | `FETCH_TIMEOUT_MS` | `1800000` | Wall-clock cap per cycle (30m) |
-| `STALLED_THRESHOLD_MS` | `300000` | Heartbeat staleness threshold (5m) |
+| `STALLED_THRESHOLD_MS` | `3600000` | Heartbeat staleness threshold (1h); must be >= `FETCH_TIMEOUT_MS` |
 
 ---
 
@@ -183,6 +184,7 @@ Global settings via `.env` (env-first), loaded by `backend/src/config/index.ts`.
 | `backend/src/sources/rezi/ReziJobSource.ts` | Rezi adapter (PMTiles + details API, raw payload + `raw_data`) |
 | `backend/src/sources/rezi/pmtiles.ts` | PMTiles parsing/utilities (header/directory, ranges, gzip) |
 | `backend/src/transform/` | Adapted transform ETL engine wired to `JobRepository`; per-adapter `transform_config` (Rezi) |
+| `backend/src/transform/rezi.transform.json` | Rezi per-adapter transform_config mapping declaration |
 | `backend/src/persistence/JobRepository.ts` | DB abstraction: upsert/sync/diff, fetch_runs operations |
 | `backend/src/config/index.ts` | Env-first config (`CONFIG`) with defaults + bootstrap |
 | `backend/src/utils/logger.ts` | Multi-driver logger |
@@ -201,17 +203,17 @@ Global settings via `.env` (env-first), loaded by `backend/src/config/index.ts`.
 - **FR-02:** normalized persistence with provenance (`source_id`, `external_id`), dedup via upsert/sync, `raw_data` preserved.
 - **FR-10:** configurable sources via `sources.config` + env-first globals.
 - **FR-11:** `fetch_runs` with status, timestamps, counters, `metadata`, `error_message`.
-- **NF-01/NF-02:** core agnostic; normalization only via transform engine + per-adapter `transform_config`.
-- **Retries/backoff:** execution-level (2.8.2); per-source `api_delay` and `retry` config (2.8.3 context).
-- **PMTiles:** missing tiles treated as empty; `max_tiles` safety cap; gzip decompression; range requests.
-- **Concurrency/stalled:** `MAX_CONCURRENT_SOURCES` + heartbeat/stalled detection (2.8.1).
+- **NF-01/NF-02:** core agnostic; normalization via transform engine + per-adapter `transform_config`; classification is adapter-specific.
+- **Retries/backoff:** execution-level retries per `MAX_RETRIES`/`RETRY_DELAY_MS`; per-source `api_delay` and `retry` config in `sources.config`.
+- **PMTiles:** missing tiles treated as empty; `max_tiles` safety cap (per-source config, not global `.env`); gzip decompression; range requests.
+- **Concurrency/stalled:** `MAX_CONCURRENT_SOURCES` concurrency cap; stalled detection uses `FETCH_TIMEOUT_MS`/`STALLED_THRESHOLD_MS`.
 
 ---
 
 ## 10. Testing & Validation
 
 - **Adapter:** PMTiles parsing, tile→IDs, batching (<=9), raw payload includes `raw_data` + `external_id`.
-- **Transform:** Rezi `transform_config` maps to all normalized entities; upsert by `(source_id,external_id)` works across runs; skills/locations created/linked correctly.
+- **Transform:** Rezi `transform_config` maps raw records to normalized entities (jobs, skills, job_skills, locations, cities, countries); upsert by `(source_id,external_id)` works across runs; skills/locations created/linked correctly.
 - **Persistence:** `upsert`/`sync` + `calculateDiff` give correct `jobs_saved_new`/`jobs_saved_updated`; orphans handled by sync.
 - **Orchestrator:** polling loop, fire & forget, concurrency cap, stalled detection, graceful shutdown.
 - **Resilience:** missing tiles empty; batch failure logged with warnings, cycle continues; retries/backoff respected.
