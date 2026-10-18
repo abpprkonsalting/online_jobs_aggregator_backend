@@ -10,14 +10,40 @@ Stores configuration for each pluggable job source.
 | id | UUID (PK) | |
 | name | VARCHAR(100) | Unique (e.g., rezi-map) |
 | type | ENUM('api','scrape','hybrid') | |
-| config | JSON | Source-specific config (endpoints, bbox/zoom, rate limits, `interval_ms` or `cron` for per-source schedule, `max_tiles` safety cap, retry, etc.) |
+| config | JSON | Source-specific config (endpoints, rate limits, `interval_ms` or `cron` for per-source schedule, `max_tiles` safety cap, retry, etc.) |
 | enabled | TINYINT(1) DEFAULT 1 | |
 | last_run_at | DATETIME NULL | When the last fetch cycle started for this source |
 | next_run_at | DATETIME NULL | Pre-computed next scheduled run (from `config.interval_ms`); used to skip ticks when not due |
 | created_at | DATETIME NOT NULL | |
 | updated_at | DATETIME NOT NULL | |
 
-## 2. fetch_runs
+## 2. geographic_areas
+Standardized geographic area definitions. For phase 1, the standard definition matches Rezi's tile-based approach: a bounding box (bbox) and zoom level. Each source adapter implements conversion from this standard to its native format (other sources may translate bbox+zoom to their own params).
+
+| Field | Type | Notes |
+|---|---|---|
+| id | UUID (PK) | |
+| name | VARCHAR(150) | Human-readable name (e.g., "San Francisco Bay Area") |
+| definition | JSON | Standard definition: {bbox: [min_lon, min_lat, max_lon, max_lat], zoom: integer} |
+| enabled | TINYINT(1) DEFAULT 1 | |
+| created_at | DATETIME NOT NULL | |
+| updated_at | DATETIME NOT NULL | |
+
+## 3. source_geographic_areas
+Many-to-many relation linking sources to the geographic areas they should fetch. Each row is an enabled fetch configuration for one (source, area) pair.
+
+| Field | Type | Notes |
+|---|---|---|
+| source_id | UUID (FK → sources.id) NOT NULL | |
+| geographic_area_id | UUID (FK → geographic_areas.id) NOT NULL | |
+| enabled | TINYINT(1) DEFAULT 1 | Whether this (source, area) combination is actively fetched |
+| last_run_at | DATETIME NULL | When the last fetch for this (source, area) started |
+| next_run_at | DATETIME NULL | Pre-computed next scheduled run for this (source, area) |
+| created_at | DATETIME NOT NULL | |
+| updated_at | DATETIME NOT NULL | |
+| PRIMARY KEY (source_id, geographic_area_id) | | |
+
+## 4. fetch_runs
 Track daemon runs per source.
 
 | Field | Type | Notes |
@@ -35,7 +61,7 @@ Track daemon runs per source.
 | warnings | JSON NULL | Warnings from adapter execution (e.g., batch failures, non-fatal issues) |
 | created_at | DATETIME NOT NULL | |
 
-## 3. countries
+## 5. countries
 Country reference table.
 
 | Field | Type | Notes |
@@ -46,7 +72,7 @@ Country reference table.
 | created_at | DATETIME NOT NULL | |
 | updated_at | DATETIME NOT NULL | |
 
-## 4. cities
+## 6. cities
 City reference table.
 
 | Field | Type | Notes |
@@ -57,7 +83,7 @@ City reference table.
 | created_at | DATETIME NOT NULL | |
 | updated_at | DATETIME NOT NULL | |
 
-## 5. locations
+## 7. locations
 Structured location for jobs (normalized).
 
 | Field | Type | Notes |
@@ -69,7 +95,7 @@ Structured location for jobs (normalized).
 | created_at | DATETIME NOT NULL | |
 | updated_at | DATETIME NOT NULL | |
 
-## 6. skills
+## 8. skills
 Skill reference table (normalized for efficient querying).
 
 | Field | Type | Notes |
@@ -80,7 +106,7 @@ Skill reference table (normalized for efficient querying).
 | created_at | DATETIME NOT NULL | |
 | updated_at | DATETIME NOT NULL | |
 
-## 7. job_skills
+## 9. job_skills
 Pivot table linking jobs and skills.
 
 | Field | Type | Notes |
@@ -89,7 +115,7 @@ Pivot table linking jobs and skills.
 | skill_id | UUID (FK → skills.id) NOT NULL | |
 | PRIMARY KEY (job_id, skill_id) | | |
 
-## 8. categories
+## 10. categories
 Job categories for classification (many-to-many with jobs).
 
 | Field | Type | Notes |
@@ -101,7 +127,7 @@ Job categories for classification (many-to-many with jobs).
 | created_at | DATETIME NOT NULL | |
 | updated_at | DATETIME NOT NULL | |
 
-## 9. job_categories
+## 11. job_categories
 Pivot table linking jobs and categories.
 
 | Field | Type | Notes |
@@ -111,7 +137,7 @@ Pivot table linking jobs and categories.
 | classification_confidence | DECIMAL(3,2) NULL | Confidence for this classification |
 | PRIMARY KEY (job_id, category_id) | | |
 
-## 10. jobs (normalized)
+## 12. jobs (normalized)
 Core job entity.
 
 | Field | Type | Notes |

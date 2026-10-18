@@ -61,12 +61,13 @@ The daemon uses a **RxJS-style lifecycle** (following `lmp_scraper`'s approach) 
 ### 3.2 Execution flow per cycle
 1. Load global configuration from `.env` (only).
 2. Load enabled source IDs from `ENABLED_SOURCES` env var; fetch full `sources` config rows from the database table. Compute optimal poll interval as `MIN(source_intervals) / 10` (capped by `POLL_INTERVAL_MS` config default) — ensures no source misses its schedule.
-3. Create `fetch_runs` row per enabled source: status=`running`, started_at=now.
-4. Adapter: `adapter.fetch()` → returns `FetchResult{ rawJobs, metrics(acquisition only), metadata, warnings }` (raw, no normalization).
-5. Transform: run transform engine with the adapter's `transform_config` over `rawJobs` → produces normalized entities (jobs, skills, job_skills, locations, cities, countries); persist via `JobRepository` with upsert/sync and dedup by `(source_id, external_id)`.
-6. Aggregate: `jobs_found = rawJobs.length`, compute `jobs_saved_new`/`jobs_saved_updated` from transform run; set `jobs.fetched_at` on persisted jobs.
-7. Finalize: write `fetch_runs` as `success|failed`, set `finished_at`, store counters, `metadata = { ...adapter.metadata, ...adapter.metrics }`, `warnings = adapter.warnings`, `error_message` if failed; update `sources.last_run_at`.
-8. Continue to other sources on failure (per-source isolation).
+3. Load enabled `(source, area)` pairs from `source_geographic_areas` where `enabled = 1`; join with `geographic_areas` for the standardized definition.
+4. For each enabled `(source, area)` pair, create `fetch_runs` row: status=`running`, started_at=now. Track source_id and geographic_area_id.
+5. Adapter: `adapter.fetch({ geographicArea })` → passes the standardized area definition to the adapter; adapter converts to its native format internally → returns `FetchResult{ rawJobs, metrics(acquisition only), metadata, warnings }` (raw, no normalization).
+6. Transform: run transform engine with the adapter's `transform_config` over `rawJobs` → produces normalized entities (jobs, skills, job_skills, locations, cities, countries); persist via `JobRepository` with upsert/sync and dedup by `(source_id, external_id)`.
+7. Aggregate: `jobs_found = rawJobs.length`, compute `jobs_saved_new`/`jobs_saved_updated` from transform run; set `jobs.fetched_at` on persisted jobs.
+8. Finalize: write `fetch_runs` as `success|failed`, set `finished_at`, store counters, `metadata = { ...adapter.metadata, ...adapter.metrics }`, `warnings = adapter.warnings`, `error_message` if failed; update `sources.last_run_at` and `source_geographic_areas.last_run_at`/`next_run_at`.
+9. Continue to other (source, area) pairs on failure (per-pair isolation).
 
 ---
 
@@ -75,6 +76,12 @@ The daemon uses a **RxJS-style lifecycle** (following `lmp_scraper`'s approach) 
 Each source implements this contract. The orchestrator interacts only with it.
 
 ```ts
+export interface GeographicArea {
+  id: string;               // geographic_areas.id (UUID)
+  name: string;             // Human-readable name
+  definition: Record<string, unknown>; // Standard definition {bbox, zoom}
+}
+
 export interface FetchRunMetrics {
   jobsFound: number;        // raw records returned (acquisition only)
   [key: string]: unknown;   // source-specific acquisition metrics
@@ -105,13 +112,13 @@ export interface JobSourceContext {
 
 export abstract class JobSource {
   constructor(protected ctx: JobSourceContext) {}
-  abstract fetch(): Promise<FetchResult>;
+  abstract fetch(geographicArea: GeographicArea): Promise<FetchResult>;
   cleanup?(): Promise<void>;
 }
 ```
 
 **Rules:**
-- `fetch()` returns raw records. No DB access, no normalization to DB columns.
+- `fetch(geographicArea)` returns raw records. No DB access, no normalization to DB columns.
 - Each `rawJobs` item must include `raw_data` (full original record; JSON) and `external_id` (string, source native ID) for dedup/traceability.
 - Adapters may keep native fields inside `raw_data`; mapping to normalized columns is declared in `transform_config` (not in the adapter).
 - Rate limiting, retries/backoff (per `sources.config`) enforced inside adapter.
@@ -128,18 +135,22 @@ Normalization is performed by the **transform ETL engine** adapted from `lmp_scr
 > **Reference:** The transform engine is adapted from `lmp_scraper` (external project). `TransformConfig (v3)`, `date_parse`, `entity_lookup_auto`, and `calculateDiff` are `lmp_scraper` concepts being ported to this stack via `JobRepository`. The original code is not part of this repository.
 
 ### 5.1 Design
-- **Per-adapter `transform_config`** (declarative JSON) declares how raw source records map to `DATA_MODEL.md` entities: `jobs`, `skills`, `job_skills`, `countries`, `cities`, `locations`. Classification into `categories`/`job_categories` is the responsibility of the specific adapter, not the transform engine.
+- **Per-adapter `transform_config`** (declarative JSON) declares how raw source records map to `DATA_MODEL.md` entities: `jobs`, `job_skills`, `job_categories`, `locations`. Master tables (`skills`, `categories`, `cities`, `countries`, `geographic_areas`) are **populated from the frontend** and must **not** be created, updated, or deleted by the fetch pipeline.
 - **Pipeline (same as lmp_scraper v3):** `map_fields` → `resolve_relations` → `validate` → `deduplicate` → `persist`.
-- **Parent/child ordering** and `sourceArray` expansion supported (e.g., `ai_key_skills` as array → `skills` + `job_skills`).
-- **Resolvers:** e.g., `entity_lookup_auto` to resolve/create countries/cities/skills; supports auto-create where appropriate.
-- **Persistence:** transform `persist` stage calls `JobRepository`; upsert by `matchBy` (jobs: `['source_id','external_id']`), with diff-based `sync` for entities that must reflect source set.
+- **Parent/child ordering** and `sourceArray` expansion supported (e.g., `ai_key_skills` as array → resolve against existing `skills` → `job_skills`).
+- **Resolvers:** e.g., `entity_lookup` to resolve source-provided values against existing master tables (skills, cities, countries); adapter handles mismatches via config translation or fuzzy matching — the pipeline never auto-creates master data.
+- **Persistence:** transform `persist` stage calls `JobRepository`; jobs upsert by `matchBy` (`['source_id','external_id']`); child tables (`job_skills`, `job_categories`, `locations`) upsert/sync per job.
 - **Traceability:** `raw_data` preserved end-to-end; transform config is the explicit mapping.
 
 ### 5.2 Rezi mapping (to be authored now)
+
+Geographic area conversion: For phase 1, the standard `geographic_areas.definition` (`{bbox, zoom}`) **is** Rezi's native format — no translation needed; the adapter passes the standard through directly to PMTiles tile computation. Other sources will translate the standard definition into their own format.
+
+Job record mapping:
 - `external_id` ← `String(obfuscated_id)`
 - `jobs`: title, organization, job_url, description_text, `allow_remote` ← `remote_derived`, salary fields (min/max/currency/unit), `date_posted` (original source timestamp, parsed to DATETIME), `posted_at` (derived/computed normalized timestamp)
-- `skills` + `job_skills`: from `ai_key_skills` array (sourceArray + entity_lookup_auto)
-- `locations`/`cities`/`countries`: from location signals (via resolvers; `raw_text` stored in `locations`)
+- `skills` + `job_skills`: from `ai_key_skills` array → resolve against existing `skills` table via adapter-provided translation or fuzzy match (pipeline never auto-creates skills); persisted as `job_skills` (job_id, skill_id)
+- `locations`/`cities`/`countries`: from location signals → resolve against existing `cities`/`countries` tables via adapter-provided translation or fuzzy match; `raw_text` stored in `locations`
 - `raw_data` kept for every job
 
 ### 5.3 Engine adaptations (required)
@@ -155,10 +166,11 @@ Normalization is performed by the **transform ETL engine** adapted from `lmp_scr
 All persistence flows through `JobRepository` (adopted from `lmp_scraper` persistence strategies, adapted to our stack).
 
 - **upsert(table, rows, matchBy, options)** — insert-or-update by `matchBy`; used for jobs and idempotent re-runs.
-- **sync(table, rows, matchBy, options)** — read existing, `calculateDiff`, delete orphans, upsert inserts/updates (useful when source list must exactly reflect state).
+- **sync(table, rows, matchBy, options)** — read existing, `calculateDiff`, delete orphans, upsert inserts/updates; **only used for per-job child tables** (`job_skills`, `job_categories`, `locations`) where the child set must exactly reflect the current fetch. **Master tables** (`skills`, `categories`, `cities`, `countries`, `geographic_areas`) are **never synced or deleted**; they are managed exclusively from the frontend.
 - **calculateDiff** — keyed by `keyFields`, returns `toInsert/toUpdate/toDelete/unchanged`; used for accurate counters.
-- **fetch_runs** operations: create/update status/timestamps/counters/metadata/error_message; update `sources.last_run_at`.
+- **fetch_runs** operations: create/update status/timestamps/counters/metadata/error_message; update `sources.last_run_at` and `source_geographic_areas.last_run_at`/`next_run_at`.
 - **counter aggregation**: `jobs_saved_new`/`jobs_saved_updated` come from transform run result (via upsert/sync outcomes).
+- **area fetch state**: update `source_geographic_areas.last_run_at`/`next_run_at` per (source, area) pair.
 
 ---
 

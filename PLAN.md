@@ -23,7 +23,13 @@ The first source is the Rezi map endpoint. Two endpoints are confirmed via HAR i
 | `https://maps-cdn.rezi.ai/jobs/jobs_v2.pmtiles` | GET (Range) | None | PMTiles v3 spatial index; each tile contains varint-encoded `obfuscated_id` values for jobs in that tile's geographic area. Total file ~775 MB; we fetch only tile byte ranges covering the target area. |
 | `https://api.rezi.ai/v1/search-engine/maps/jobs/details?page=1&rows_per_page=9` | POST | None | Accepts JSON body `{"obfuscated_ids":[...]}` (observed max 9 IDs per call). Returns full job records. |
 
-### 2.2 Job record fields (from `output.json` / `jobs_output.json`)
+### 2.2 Geographic areas
+
+Geographic areas are stored centrally in the `geographic_areas` table (see `DATA_MODEL.md` §2). For phase 1, the standard definition **is** Rezi's native format: a bounding box (`bbox: [min_lon, min_lat, max_lon, max_lat]`) plus a `zoom` level, used directly to compute PMTiles tile coordinates. No translation is needed for the first source. Other sources will translate the standard definition into their own format.
+
+The `source_geographic_areas` many-to-many table (§3) links each source to the areas it should fetch, with an `enabled` flag. This keeps the source URL/config singular — one source row, many areas — avoiding duplication of sources per area.
+
+### 2.3 Job record fields (from `output.json` / `jobs_output.json`)
 
 Current Rezi source fields (these are mapped by the adapter into the normalized model defined in `DATA_MODEL.md`):
 
@@ -36,7 +42,7 @@ Current Rezi source fields (these are mapped by the adapter into the normalized 
 - `ai_key_skills` (array of strings) — mapped to normalized `skills` (many-to-many)
 - Other fields (e.g., `frontend_payload`, `employment_type`, `experience_level`, `work_arrangement`) may be used by the adapter for normalization/classification and stored as needed in `raw_data`.
 
-### 2.3 Technical constraints & observations
+### 2.4 Technical constraints & observations
 
 - No authentication required on the first source endpoints.
 - Details API accepts ~9 `obfuscated_ids` per POST call (observed).
@@ -136,26 +142,27 @@ Current Rezi source fields (these are mapped by the adapter into the normalized 
 - **REST API Layer**: Exposes endpoints to query, filter, and sort jobs stored in the database.
 - **Source Adapters (pluggable)**: Modular adapters implementing a common interface (`JobSource`). Each adapter encapsulates source-specific logic (API calls, scraping, etc.). First adapter: Rezi map.
   - `sources/base/JobSource` (interface/contract)
-  - `sources/rezi/` — Rezi implementation (tiles/PMTiles parsing, ID extraction, details API, normalization, classification)- **Classification (adapter-specific)**: Each `JobSource` adapter classifies jobs into categories (`categories`/`job_categories` with confidence) using its own internal method. The adapter's output includes category assignments.
-- **Job Fetcher Daemon**: Background process that periodically runs configured source adapters, persists normalized job records to the database. Handles deduplication and incremental updates per source.
+  - `sources/rezi/` — Rezi implementation (tiles/PMTiles parsing, ID extraction, details API, normalization, classification)
+- **Classification (adapter-specific)**: Each `JobSource` adapter classifies jobs into categories (`categories`/`job_categories` with confidence) using its own internal method. The adapter's output includes category assignments.
+- **Job Fetcher Daemon**: Background process that periodically runs configured source adapters, persists normalized job records to the database. Handles deduplication and incremental updates per source. **Does not manage master tables** (`skills`, `categories`, `cities`, `countries`, `geographic_areas`); these are populated exclusively via the frontend or admin interfaces.
 - **Database Layer**: Persistence for jobs, sources, fetch runs, locations, categories, skills, etc. as defined in `DATA_MODEL.md`. Database and schema are TBD (MySQL candidate).
 
 ---
 
 ## 5. Data Flow
 
-1. **Configuration**: Sources, areas (bounding boxes/zooms), filters, and per-source schedule (interval_ms or cron) configured via database `sources` table; computed at daemon startup as adaptive global poll interval.
-2. **Periodic fetch (daemon)**: Daemon triggers enabled source adapters using adaptive global tick; checks each source's `next_run_at` (from DB `sources.next_run_at`) before firing.
-3. **Rezi source (first source)**:
-   a. Tile computation: Bbox + zoom → list of (z, x, y) tiles
+1. **Configuration:** Sources, enabled sources, and the (source, area) fetch matrix configured via database tables — `sources` (§1), `geographic_areas` (§2), and `source_geographic_areas` (§3). Per-source schedule (`interval_ms` or `cron`) stored in `sources.config`; computed per (source,area) pair also stored in `source_geographic_areas.next_run_at`.
+2. **Periodic fetch (daemon):** Daemon triggers enabled `(source, area)` pairs; checks each `source_geographic_areas` row's `next_run_at` before firing.
+3. **Rezi source (first source) — per geographic area:**
+   a. Bbox/region → tile computation: Bbox + zoom → list of (z, x, y) tiles
    b. Offset resolution: Tile list + PMTiles directory → list of (tile_offset, tile_length)
    c. Tile fetch: Range requests → gzip-decompressed tile bytes
    d. ID extraction: Tile bytes → set of `obfuscated_id` ints
    e. API batching: ID set → batches of 9 → POST requests → raw job records
-4. **Normalization**: Raw job records → normalized schema (per `DATA_MODEL.md`) via transform engine / source-specific normalizer.
+4. **Normalization:** Raw job records → normalized schema (per `DATA_MODEL.md`) via transform engine / source-specific normalizer.
 5. **Classification** (adapter-specific): Each adapter assigns categories (many-to-many) with confidence via its own internal method.
-6. **Persistence**: Store normalized job records and relevant metadata in the database (deduplication/incremental updates).
-7. **User access**: Frontend (Angular) queries REST API → Backend reads from database → Filtered, sorted results returned to UI.
+6. **Persistence:** Store normalized job records and relevant metadata in the database (deduplication/incremental updates), setting `jobs.fetched_at`.
+7. **User access:** Frontend (Angular) queries REST API → Backend reads from database → Filtered, sorted results returned to UI.
 
 ---
 
