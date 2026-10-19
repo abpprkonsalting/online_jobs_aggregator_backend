@@ -1,0 +1,37 @@
+{
+  "name": "map-rezi-backend",
+  "version": "1.0.0",
+  "description": "Job extraction backend - Node.js + Express with Rezi source adapter",
+  "main": "dist/daemon/index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/daemon/index.js",
+    "dev": "ts-node src/daemon/index.ts",
+    "api": "ts-node src/api/server.ts"
+  },
+  "keywords": [
+    "scraper",
+    "rezi",
+    "jobs",
+    "pmtiles",
+    "express"
+  ],
+  "license": "ISC",
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "express-validator": "^7.3.2",
+    "jsonwebtoken": "^9.0.2",
+    "mysql2": "^3.11.5",
+    "pmtiles": "^2.4.0"
+  },
+  "devDependencies": {
+    "@types/bcryptjs": "^2.4.6",
+    "@types/express": "^4.17.21",
+    "@types/jsonwebtoken": "^9.0.6",
+    "@types/node": "^22.10.2",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.6.3"
+  }
+}
