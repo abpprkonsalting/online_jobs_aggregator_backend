@@ -1,0 +1,52 @@
+{
+  "name": "rezi",
+  "version": "1",
+  "description": "Rezi map source adapter transform configuration",
+  "entities": {
+    "jobs": {
+      "table": "jobs",
+      "matchBy": ["source_id", "external_id"],
+      "fields": {
+        "external_id": { "source": "obfuscated_id", "transform": "string" },
+        "title": { "source": "title", "transform": "string" },
+        "organization": { "source": "organization", "transform": "string" },
+        "job_url": { "source": "job_url", "transform": "string" },
+        "description_text": { "source": "description_text", "transform": "string" },
+        "allow_remote": { "source": "remote_derived", "transform": "boolean" },
+        "salary_min": { "source": "salary_min_value", "transform": "number" },
+        "salary_max": { "source": "salary_max_value", "transform": "number" },
+        "salary_currency": { "source": "salary_currency", "transform": "string" },
+        "salary_unit": { "source": "salary_unit_text", "transform": "string" },
+        "date_posted": { "source": "date_posted", "transform": "date" },
+        "posted_at": { "source": "date_posted", "transform": "date" },
+        "raw_data": { "source": "_raw", "transform": "json" }
+      }
+    },
+    "job_skills": {
+      "table": "job_skills",
+      "matchBy": ["job_id", "skill_id"],
+      "sourceArray": "ai_key_skills",
+      "fields": {
+        "skill_id": { "source": "_resolved", "transform": "entity_lookup" }
+      }
+    },
+    "job_categories": {
+      "table": "job_categories",
+      "matchBy": ["job_id", "category_id"],
+      "sourceArray": "_categories",
+      "fields": {
+        "category_id": { "source": "_resolved", "transform": "entity_lookup" },
+        "classification_confidence": { "source": "confidence", "transform": "number" }
+      }
+    },
+    "locations": {
+      "table": "locations",
+      "matchBy": ["job_id"],
+      "sourceArray": "_locations",
+      "fields": {
+        "city_id": { "source": "_resolved", "transform": "entity_lookup" },
+        "raw_text": { "source": "raw_text", "transform": "string" }
+      }
+    }
+  }
+}

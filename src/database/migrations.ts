@@ -47,6 +47,7 @@ export async function ensureDatabase(): Promise<void> {
       metadata JSON NULL,
       warnings JSON NULL,
       created_at DATETIME NOT NULL,
+      updated_at DATETIME NOT NULL,
       FOREIGN KEY (source_id) REFERENCES sources(id) ON DELETE SET NULL
     )`,
     `CREATE TABLE IF NOT EXISTS countries (
