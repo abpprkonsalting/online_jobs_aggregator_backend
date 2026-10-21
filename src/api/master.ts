@@ -80,4 +80,60 @@ router.post(
   }
 )
 
+// ── Keywords ──
+router.get('/keywords', async (_req: Request, res: Response) => {
+  const keywords = await repo.listKeywords()
+  res.json(keywords)
+})
+
+router.post(
+  '/keywords',
+  body('name').isString().notEmpty(),
+  body('slug').isString().notEmpty(),
+  body('category_id').optional().isUUID(),
+  body('enabled').optional().isBoolean(),
+  async (req: Request, res: Response) => {
+    if (!validate(req, res)) return
+    const { name, slug, category_id, enabled } = req.body
+    const id = crypto.randomUUID()
+    await repo.upsertKeyword({ id, name, slug, category_id, enabled })
+    res.status(201).json({ id, name, slug, category_id, enabled: enabled ?? true })
+  }
+)
+
+// ── Categories ──
+router.get('/categories', async (_req: Request, res: Response) => {
+  const categories = await repo.listCategories()
+  res.json(categories)
+})
+
+router.post(
+  '/categories',
+  body('name').isString().notEmpty(),
+  body('slug').isString().notEmpty(),
+  body('description').optional().isString(),
+  async (req: Request, res: Response) => {
+    if (!validate(req, res)) return
+    const { name, slug, description } = req.body
+    const id = crypto.randomUUID()
+    await repo.upsertCategory({ id, name, slug, description })
+    res.status(201).json({ id, name, slug, description })
+  }
+)
+
+// ── Category ↔ Keyword links ──
+router.post(
+  '/category-keywords',
+  body('category_id').isUUID(),
+  body('keyword_id').isUUID(),
+  body('weight').optional().isNumeric(),
+  body('enabled').optional().isBoolean(),
+  async (req: Request, res: Response) => {
+    if (!validate(req, res)) return
+    const { category_id, keyword_id, weight, enabled } = req.body
+    await repo.upsertCategoryKeyword({ category_id, keyword_id, weight, enabled })
+    res.status(201).json({ category_id, keyword_id, weight, enabled: enabled ?? true })
+  }
+)
+
 export default router

@@ -3,6 +3,7 @@ import { PMTiles, FetchSource } from 'pmtiles'
 export interface PMTilesSourceConfig {
   pmtilesUrl?: string
   detailsApiUrl?: string
+  searchApiUrl?: string
   max_tiles?: number
   api_delay?: number
 }

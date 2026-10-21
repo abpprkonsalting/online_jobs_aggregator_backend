@@ -23,6 +23,7 @@ export interface SourceConfig {
   id: string
   name: string
   type: 'api' | 'scrape' | 'hybrid'
+  working_mode: 'passive' | 'proactive' | 'both'
   config: Record<string, unknown>
   enabled: boolean
   last_run_at?: Date | null

@@ -235,16 +235,18 @@ export class JobRepository {
     id: string
     name: string
     type: 'api' | 'scrape' | 'hybrid'
+    working_mode?: 'passive' | 'proactive' | 'both'
     config: Record<string, unknown>
     enabled?: boolean
   }): Promise<void> {
     const now = new Date()
     const enabled = data.enabled ?? 1
+    const working_mode = data.working_mode ?? 'both'
     await execute(
-      `INSERT INTO sources (id, name, type, config, enabled, last_run_at, next_run_at, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, NULL, NULL, ?, ?)
-       ON DUPLICATE KEY UPDATE name = VALUES(name), type = VALUES(type), config = VALUES(config), enabled = VALUES(enabled), updated_at = VALUES(updated_at)`,
-      [data.id, data.name, data.type, JSON.stringify(data.config), enabled, now, now]
+      `INSERT INTO sources (id, name, type, working_mode, config, enabled, last_run_at, next_run_at, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?)
+       ON DUPLICATE KEY UPDATE name = VALUES(name), type = VALUES(type), working_mode = VALUES(working_mode), config = VALUES(config), enabled = VALUES(enabled), updated_at = VALUES(updated_at)`,
+      [data.id, data.name, data.type, working_mode, JSON.stringify(data.config), enabled, now, now]
     )
   }
 
@@ -515,6 +517,104 @@ export class JobRepository {
       JOIN geographic_areas ga ON ga.id = sga.geographic_area_id
       ORDER BY s.name ASC, ga.name ASC
     `)
+  }
+
+  // ── User interests (categories) ──
+  async listUserCategories(userId: string): Promise<any[]> {
+    return query<any>(`
+      SELECT c.id, c.name, c.slug, c.description, uc.enabled, uc.created_at
+      FROM user_categories uc
+      JOIN categories c ON c.id = uc.category_id
+      WHERE uc.user_id = ? AND uc.enabled = 1
+      ORDER BY c.name ASC
+    `, [userId])
+  }
+
+  async createUserCategory(userId: string, categoryId: string): Promise<void> {
+    const now = new Date()
+    await execute(
+      `INSERT INTO user_categories (user_id, category_id, enabled, created_at, updated_at)
+       VALUES (?, ?, 1, ?, ?)
+       ON DUPLICATE KEY UPDATE enabled = VALUES(enabled), updated_at = VALUES(updated_at)`,
+      [userId, categoryId, now, now]
+    )
+  }
+
+  async deleteUserCategory(userId: string, categoryId: string): Promise<void> {
+    await execute(
+      `DELETE FROM user_categories WHERE user_id = ? AND category_id = ?`,
+      [userId, categoryId]
+    )
+  }
+
+  // ── Keywords ──
+  async listKeywords(enabledOnly?: boolean): Promise<any[]> {
+    const where = enabledOnly ? 'WHERE enabled = 1' : ''
+    return query<any>(`SELECT * FROM keywords ${where} ORDER BY name ASC`)
+  }
+
+  async upsertKeyword(data: { id: string; name: string; slug: string; category_id?: string | null; enabled?: boolean }): Promise<void> {
+    const now = new Date()
+    const enabled = data.enabled ?? 1
+    await execute(
+      `INSERT INTO keywords (id, name, slug, category_id, enabled, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?)
+       ON DUPLICATE KEY UPDATE name = VALUES(name), slug = VALUES(slug),
+         category_id = VALUES(category_id), enabled = VALUES(enabled), updated_at = VALUES(updated_at)`,
+      [data.id, data.name, data.slug, data.category_id ?? null, enabled, now, now]
+    )
+  }
+
+  async deleteKeyword(id: string): Promise<void> {
+    await execute(`DELETE FROM keywords WHERE id = ?`, [id])
+  }
+
+  // ── Category ↔ Keyword links ──
+  async listCategoryKeywords(categoryId: string): Promise<any[]> {
+    return query<any>(`
+      SELECT k.id, k.name, k.slug, ck.weight, ck.enabled
+      FROM category_keywords ck
+      JOIN keywords k ON k.id = ck.keyword_id
+      WHERE ck.category_id = ?
+      ORDER BY k.name ASC
+    `, [categoryId])
+  }
+
+  async upsertCategoryKeyword(data: {
+    category_id: string
+    keyword_id: string
+    weight?: number | null
+    enabled?: boolean
+  }): Promise<void> {
+    const now = new Date()
+    const weight = data.weight ?? null
+    const enabled = data.enabled ?? 1
+    await execute(
+      `INSERT INTO category_keywords (category_id, keyword_id, weight, enabled, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?)
+       ON DUPLICATE KEY UPDATE weight = VALUES(weight), enabled = VALUES(enabled), updated_at = VALUES(updated_at)`,
+      [data.category_id, data.keyword_id, weight, enabled, now, now]
+    )
+  }
+
+  async deleteCategoryKeyword(categoryId: string, keywordId: string): Promise<void> {
+    await execute(
+      `DELETE FROM category_keywords WHERE category_id = ? AND keyword_id = ?`,
+      [categoryId, keywordId]
+    )
+  }
+
+  // ── Unified keyword resolution for proactive fetch ──
+  async listActiveUnifiedKeywords(): Promise<string[]> {
+    const rows = await query<any>(`
+      SELECT DISTINCT k.name AS keyword
+      FROM user_categories uc
+      JOIN category_keywords ck ON ck.category_id = uc.category_id AND ck.enabled = 1
+      JOIN keywords k ON k.id = ck.keyword_id AND k.enabled = 1
+      WHERE uc.enabled = 1
+      ORDER BY k.name ASC
+    `)
+    return rows.map((r: any) => r.keyword)
   }
 }
 

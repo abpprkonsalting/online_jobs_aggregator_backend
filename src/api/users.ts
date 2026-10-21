@@ -1,7 +1,7 @@
 import { Router, Request, Response } from 'express'
 import { body, param, validationResult } from 'express-validator'
 import { JobRepository } from '../persistence/JobRepository'
-import { requireRole } from '../middleware/auth'
+import { requireRole, requireAuthStrict, AuthRequest } from '../middleware/auth'
 
 const router = Router()
 const repo = new JobRepository()
@@ -13,6 +13,11 @@ function validate(req: Request, res: Response): boolean {
     return false
   }
   return true
+}
+
+function canAccessUser(req: AuthRequest, targetUserId: string): boolean {
+  if (!req.auth) return false
+  return req.auth.role === 'admin' || req.auth.sub === targetUserId
 }
 
 router.get('/', requireRole('admin'), async (_req: Request, res: Response) => {
@@ -71,6 +76,54 @@ router.delete(
       return
     }
     await repo.deactivateUser(req.params.id)
+    res.json({ success: true })
+  }
+)
+
+// ── User category management ──
+router.get(
+  '/:id/categories',
+  requireAuthStrict,
+  async (req: AuthRequest, res: Response) => {
+    const targetUserId = req.params.id
+    if (!canAccessUser(req, targetUserId)) {
+      res.status(403).json({ error: 'Forbidden' })
+      return
+    }
+    const categories = await repo.listUserCategories(targetUserId)
+    res.json(categories)
+  }
+)
+
+router.post(
+  '/:id/categories',
+  requireAuthStrict,
+  [param('id').isUUID(), body('category_id').isUUID()],
+  async (req: AuthRequest, res: Response) => {
+    if (!validate(req, res)) return
+    const targetUserId = req.params.id
+    if (!canAccessUser(req, targetUserId)) {
+      res.status(403).json({ error: 'Forbidden' })
+      return
+    }
+    const { category_id } = req.body
+    await repo.createUserCategory(targetUserId, category_id)
+    res.status(201).json({ user_id: targetUserId, category_id })
+  }
+)
+
+router.delete(
+  '/:id/categories/:category_id',
+  requireAuthStrict,
+  [param('id').isUUID(), param('category_id').isUUID()],
+  async (req: AuthRequest, res: Response) => {
+    if (!validate(req, res)) return
+    const targetUserId = req.params.id
+    if (!canAccessUser(req, targetUserId)) {
+      res.status(403).json({ error: 'Forbidden' })
+      return
+    }
+    await repo.deleteUserCategory(targetUserId, req.params.category_id)
     res.json({ success: true })
   }
 )

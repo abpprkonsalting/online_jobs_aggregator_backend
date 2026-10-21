@@ -28,14 +28,15 @@ router.post(
   [
     body('name').isString().notEmpty(),
     body('type').isIn(['api', 'scrape', 'hybrid']),
+    body('working_mode').optional().isIn(['passive', 'proactive', 'both']),
     body('config').isObject(),
     body('enabled').optional().isBoolean(),
   ],
   async (req: Request, res: Response) => {
     if (!validate(req, res)) return
-    const { name, type, config, enabled } = req.body
+    const { name, type, config, enabled, working_mode } = req.body
     const id = crypto.randomUUID()
-    await repo.upsertSource({ id, name, type, config, enabled })
+    await repo.upsertSource({ id, name, type, config, enabled, working_mode })
     const source = await repo.getSource(id)
     res.status(201).json(source)
   }
@@ -44,7 +45,12 @@ router.post(
 router.patch(
   '/sources/:id',
   requireRole('admin'),
-  [param('id').isUUID(), body('name').optional().isString(), body('enabled').optional().isBoolean()],
+  [
+    param('id').isUUID(),
+    body('name').optional().isString(),
+    body('working_mode').optional().isIn(['passive', 'proactive', 'both']),
+    body('enabled').optional().isBoolean(),
+  ],
   async (req: Request, res: Response) => {
     if (!validate(req, res)) return
     const { id } = req.params
@@ -57,6 +63,7 @@ router.patch(
       id,
       name: req.body.name ?? source.name,
       type: source.type,
+      working_mode: req.body.working_mode ?? source.working_mode,
       config: req.body.config ?? source.config,
       enabled: req.body.enabled ?? source.enabled,
     })

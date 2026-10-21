@@ -149,10 +149,48 @@ export async function ensureDatabase(): Promise<void> {
       created_at DATETIME NOT NULL,
       FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
     )`,
+    `CREATE TABLE IF NOT EXISTS keywords (
+      id CHAR(36) PRIMARY KEY,
+      name VARCHAR(100) NOT NULL,
+      slug VARCHAR(100) NOT NULL UNIQUE,
+      category_id CHAR(36) NULL,
+      enabled TINYINT(1) DEFAULT 1,
+      created_at DATETIME NOT NULL,
+      updated_at DATETIME NOT NULL,
+      FOREIGN KEY (category_id) REFERENCES categories(id) ON DELETE SET NULL
+    )`,
+    `CREATE TABLE IF NOT EXISTS category_keywords (
+      category_id CHAR(36) NOT NULL,
+      keyword_id CHAR(36) NOT NULL,
+      weight DECIMAL(3,2) NULL,
+      created_at DATETIME NOT NULL,
+      PRIMARY KEY (category_id, keyword_id),
+      FOREIGN KEY (category_id) REFERENCES categories(id) ON DELETE CASCADE,
+      FOREIGN KEY (keyword_id) REFERENCES keywords(id) ON DELETE CASCADE
+    )`,
+    `CREATE TABLE IF NOT EXISTS user_categories (
+      user_id CHAR(36) NOT NULL,
+      category_id CHAR(36) NOT NULL,
+      enabled TINYINT(1) DEFAULT 1,
+      created_at DATETIME NOT NULL,
+      updated_at DATETIME NOT NULL,
+      PRIMARY KEY (user_id, category_id),
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+      FOREIGN KEY (category_id) REFERENCES categories(id) ON DELETE CASCADE
+    )`
   ]
 
   for (const sql of statements) {
     await query(sql)
+  }
+
+  // Add working_mode column if missing (idempotent: MySQL has no ADD COLUMN IF NOT EXISTS)
+  const existingCols = await query<any>(`
+    SELECT COLUMN_NAME FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'sources' AND COLUMN_NAME = 'working_mode'
+  `)
+  if (existingCols.length === 0) {
+    await query(`ALTER TABLE sources ADD COLUMN working_mode ENUM('passive','proactive','both') NOT NULL DEFAULT 'both' AFTER type`)
   }
 }
 

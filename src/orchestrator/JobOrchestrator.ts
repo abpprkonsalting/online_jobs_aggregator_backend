@@ -7,6 +7,7 @@ import type { GeographicArea, JobSourceContext, SourceConfig } from '../sources/
 export interface TriggerOptions {
   sourceId?: string
   geographicAreaId?: string
+  keywords?: string[]
 }
 
 interface RunningCycle {
@@ -77,15 +78,29 @@ export class JobOrchestrator {
   }
 
   private async runCycle(opts?: TriggerOptions): Promise<void> {
-    const sources = await this.loadSources(opts?.sourceId)
+    // ── Passive cycle: (source, area) pairs ──
+    await this.runPassiveCycle(opts)
+
+    // ── Proactive cycle: unified user keywords ──
+    if (!opts?.sourceId) {
+      await this.runProactiveCycle().catch((err) => {
+        logger.error('Proactive cycle error', err)
+      })
+    }
+  }
+
+  private async runPassiveCycle(opts?: TriggerOptions): Promise<void> {
+    const sources = await this.loadSources(opts?.sourceId).then((rows) =>
+      rows.filter((s) => s.working_mode === 'passive' || s.working_mode === 'both')
+    )
     if (sources.length === 0) {
-      logger.debug('No enabled sources found, skipping cycle')
+      logger.debug('No enabled passive sources found, skipping passive cycle')
       return
     }
 
     const pairs = await this.repo.listSourceGeographicAreas()
     if (pairs.length === 0) {
-      logger.debug('No enabled source-geographic-area pairs found, skipping cycle')
+      logger.debug('No enabled source-geographic-area pairs found, skipping passive cycle')
       return
     }
 
@@ -109,6 +124,174 @@ export class JobOrchestrator {
     )
 
     await Promise.allSettled(tasks)
+  }
+
+  private async runProactiveCycle(): Promise<void> {
+    const keywords = await this.repo.listActiveUnifiedKeywords()
+    if (keywords.length === 0) {
+      logger.debug('No active user keywords found, skipping proactive cycle')
+      return
+    }
+
+    logger.info(`Starting proactive cycle with ${keywords.length} unified keyword(s)`, { keywords })
+
+    const sources = await this.loadSources()
+    if (sources.length === 0) {
+      logger.debug('No enabled sources found, skipping proactive cycle')
+      return
+    }
+
+    const proactiveSources = sources.filter(
+      (s) => s.working_mode === 'proactive' || s.working_mode === 'both'
+    )
+    if (proactiveSources.length === 0) {
+      logger.debug('No enabled proactive sources found, skipping proactive cycle')
+      return
+    }
+
+    const semaphore = new Semaphore(this.config.maxConcurrentSources)
+
+    const tasks = proactiveSources.map((source) =>
+      semaphore.acquire().then(() =>
+        this.runProactiveSourceCycle(source, keywords).finally(() => semaphore.release())
+      )
+    )
+
+    await Promise.allSettled(tasks)
+  }
+
+  private async runProactiveSourceCycle(source: SourceConfig, keywords: string[]): Promise<void> {
+    const cycleKey = `proactive:${source.id}`
+
+    // Skip if already running
+    if (this.runningCycles.has(cycleKey)) {
+      logger.debug(`Proactive cycle already running for ${source.id}, skipping`)
+      return
+    }
+
+    const clock = () => new Date()
+    const now = clock()
+    const loggerChild = this.childLogger(source.id, 'proactive')
+    const rateLimiter = this.getRateLimiter(source)
+
+    const ctx: JobSourceContext = {
+      source,
+      logger: loggerChild,
+      rateLimiter,
+      clock,
+    }
+
+    // Create fetch_runs row (running)
+    const fetchRunId = await this.repo.createFetchRun({
+      sourceId: source.id,
+      status: 'running',
+      startedAt: now,
+    })
+
+    logger.info(`Starting proactive fetch cycle for ${source.name}`, {
+      fetchRunId,
+      source: source.id,
+      keywords,
+    })
+
+    const startTime = Date.now()
+    let result: any
+    let attempts = 0
+    const maxRetries = this.config.maxRetries
+    const retryDelay = this.config.retryDelayMs
+    const fetchTimeout = this.config.fetchTimeoutMs
+
+    while (attempts <= maxRetries) {
+      attempts++
+
+      try {
+        const timeoutPromise = new Promise<never>((_resolve, reject) => {
+          setTimeout(() => reject(new Error(`Fetch timed out after ${fetchTimeout}ms`)), fetchTimeout)
+        })
+
+        result = await Promise.race([
+          this.fetchFromAdapterByKeywords(ctx, keywords),
+          timeoutPromise,
+        ])
+
+        break
+      } catch (err) {
+        const error = err as Error
+        logger.error(`Proactive fetch attempt ${attempts}/${maxRetries + 1} failed for ${source.name}`, {
+          fetchRunId,
+          error: error.message,
+        })
+
+        if (attempts <= maxRetries) {
+          await this.sleep(retryDelay)
+        } else {
+          await this.repo.updateFetchRun({
+            id: fetchRunId,
+            status: 'failed',
+            finishedAt: new Date(),
+            errorMessage: error.message,
+            jobsFound: 0,
+            jobsSavedNew: 0,
+            jobsSavedUpdated: 0,
+          })
+          await this.repo.updateSourceTimestamps(source.id, now, null)
+          logger.error(`Proactive cycle failed for ${source.name} after ${maxRetries + 1} attempts`, {
+            fetchRunId,
+            error: error.message,
+          })
+          return
+        }
+      }
+    }
+
+    // Transform + persist via Transform Engine
+    const rawJobs: unknown[] = result?.rawJobs ?? []
+    const transformWarnings: string[] = result?.warnings ?? []
+
+    let jobsFound = rawJobs.length
+    let jobsSavedNew = 0
+    let jobsSavedUpdated = 0
+
+    try {
+      const { TransformEngine } = await import('../transform/engine')
+      const transformConfig = await import('../transform/rezi.transform.json')
+      const engine = new TransformEngine(this.repo, transformConfig as any, source.id, loggerChild)
+      const transformResult = await engine.run(rawJobs)
+
+      jobsFound = transformResult.jobsFound
+      jobsSavedNew = transformResult.jobsSavedNew
+      jobsSavedUpdated = transformResult.jobsSavedUpdated
+      transformWarnings.push(...transformResult.warnings)
+    } catch (err) {
+      const error = err as Error
+      logger.error(`Transform engine failed for ${source.name} (proactive)`, {
+        fetchRunId,
+        error: error.message,
+      })
+      transformWarnings.push(`Transform engine error: ${error.message}`)
+    }
+
+    await this.repo.updateFetchRun({
+      id: fetchRunId,
+      status: 'success',
+      finishedAt: new Date(),
+      jobsFound,
+      jobsSavedNew,
+      jobsSavedUpdated,
+      metadata: result?.metadata ?? {},
+      warnings: transformWarnings,
+    })
+
+    await this.repo.updateSourceTimestamps(source.id, new Date(), null)
+
+    const duration = Date.now() - startTime
+    logger.info(`Proactive fetch cycle completed for ${source.name}`, {
+      fetchRunId,
+      jobsFound,
+      jobsSavedNew,
+      jobsSavedUpdated,
+      durationMs: duration,
+    })
   }
 
   private async runPairCycle(pair: {
@@ -314,12 +497,27 @@ export class JobOrchestrator {
     }
   }
 
+  private async fetchFromAdapterByKeywords(ctx: JobSourceContext, keywords: string[]): Promise<any> {
+    const { ReziJobSource } = await import('../sources/rezi/ReziJobSource')
+    const adapter = new ReziJobSource(ctx)
+    try {
+      return await adapter.fetchByKeywords(keywords)
+    } finally {
+      if (adapter.cleanup) {
+        await adapter.cleanup().catch((err) => {
+          logger.warn('Adapter cleanup failed', { error: err.message })
+        })
+      }
+    }
+  }
+
   private async loadSources(filterSourceId?: string): Promise<SourceConfig[]> {
     const rows = await this.repo.listSources()
     const sources: SourceConfig[] = rows.map((row: any) => ({
       id: row.id,
       name: row.name,
       type: row.type,
+      working_mode: (row.working_mode ?? 'both') as 'passive' | 'proactive' | 'both',
       config: typeof row.config === 'string' ? JSON.parse(row.config) : (row.config ?? {}),
       enabled: Boolean(row.enabled),
       last_run_at: row.last_run_at ?? null,
