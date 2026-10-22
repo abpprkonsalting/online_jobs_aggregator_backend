@@ -1,0 +1,5 @@
+process.env.NODE_ENV = 'test'
+process.env.DATABASE_URL = 'mysql://test:test@127.0.0.1:3306/backend_test'
+process.env.JWT_SECRET = 'backend-test-secret-that-is-long-enough-for-hmac-signing'
+process.env.ADMIN_EMAIL = 'admin@example.test'
+process.env.ADMIN_PASSWORD = 'test-only-password'

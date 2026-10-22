@@ -77,7 +77,7 @@ Run the complete test suite and production build; fix failures caused by test se
 ## Current status
 
 - [x] Inventory backend modules and establish the pre-test build baseline.
-- [ ] B1 — Test infrastructure and foundational utilities.
+- [x] B1 — Test infrastructure and foundational utilities (**13 tests passed**).
 - [ ] B2 — Rezi PMTiles and source adapter.
 - [ ] B3 — Transform engine and entity resolution.
 - [ ] B4 — HTTP API routers.
