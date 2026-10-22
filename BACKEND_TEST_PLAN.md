@@ -83,7 +83,13 @@ Run the complete test suite and production build; fix failures caused by test se
 - [x] B4 — HTTP API routers (**17 tests passed**); added cookie parsing to the API server so refresh-token cookies reach authentication routes.
 - [x] B5 — Repository and database lifecycle (**15 tests passed**); verified parameterized repository operations, pool/transaction cleanup, idempotent migration behavior, and admin seeding without a live database.
 - [x] B6 — Orchestrator scheduling and cycles (**9 tests passed**); filtered passive pairs by working mode, cleared timeout timers, and made stop cancel polling and skip not-yet-started proactive work.
-- [ ] B7 — Full suite and final verification.
+- [x] B7 — Full suite and final verification (**71 tests passed across 12 files; `npm run build` passed**).
+
+## Final verification
+
+- `npm test`: **12 test files passed, 71 tests passed**.
+- `npm run build`: passed.
+- All automated tests use mocks for MySQL, PMTiles, and external HTTP; no live database, Rezi service, or production data was used.
 
 ## Known test boundaries
 
