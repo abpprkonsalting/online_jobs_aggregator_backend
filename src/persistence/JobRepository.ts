@@ -1,3 +1,4 @@
+import { RowDataPacket } from 'mysql2/promise'
 import { query, execute } from '../database/db'
 
 export class JobRepository {
@@ -62,6 +63,17 @@ export class JobRepository {
 
   async findJobs(): Promise<any[]> {
     return query<any>(`SELECT * FROM jobs ORDER BY posted_at DESC, date_posted DESC`)
+  }
+
+  async findJobIdsByCategories(categoryIds: string[]): Promise<string[]> {
+    if (categoryIds.length === 0) return []
+
+    const placeholders = categoryIds.map(() => '?').join(', ')
+    const rows = await query<Array<{ job_id: string } & RowDataPacket>>(
+      `SELECT DISTINCT job_id FROM job_categories WHERE category_id IN (${placeholders})`,
+      categoryIds,
+    )
+    return rows.map((row) => row.job_id)
   }
 
   async getJobDetails(jobId: string): Promise<any | null> {

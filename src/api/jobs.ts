@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express'
 import { query, validationResult } from 'express-validator'
 import { JobRepository } from '../persistence/JobRepository'
+import { AuthRequest } from '../middleware/auth'
 
 const router = Router()
 const repo = new JobRepository()
@@ -31,7 +32,7 @@ router.get(
     query('salary_max').optional().isNumeric(),
     query('organization').optional().isString(),
   ],
-  async (req: Request, res: Response) => {
+  async (req: AuthRequest, res: Response) => {
     if (!validate(req, res)) return
 
     const limit = Math.min(parseInt(req.query.limit as string) || 20, 100)
@@ -42,6 +43,15 @@ router.get(
     const jobs = await repo.findJobs()
 
     let filtered = jobs
+    if (req.auth) {
+      const followedCategories = await repo.listUserCategories(req.auth.sub)
+      if (followedCategories.length > 0) {
+        const matchingJobIds = new Set(
+          await repo.findJobIdsByCategories(followedCategories.map((category) => category.id)),
+        )
+        filtered = filtered.filter((job: any) => matchingJobIds.has(job.id))
+      }
+    }
 
     // Apply filters
     if (req.query.category) {
