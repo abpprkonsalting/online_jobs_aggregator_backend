@@ -1,4 +1,4 @@
-import { Pool, PoolConnection, RowDataPacket, ResultSetHeader } from 'mysql2/promise'
+import { createPool, type Pool, type PoolConnection, type RowDataPacket, type ResultSetHeader } from 'mysql2/promise'
 import { getConfig } from '../config'
 
 let pool: Pool | null = null
@@ -6,8 +6,7 @@ let pool: Pool | null = null
 export function getPool(): Pool {
   if (!pool) {
     const config = getConfig()
-    const mysql = require('mysql2/promise')
-    pool = mysql.createPool({
+    pool = createPool({
       uri: config.databaseUrl,
       waitForConnections: true,
       connectionLimit: 10,
