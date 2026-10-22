@@ -125,6 +125,7 @@ export class TransformEngine {
       else jobsSavedUpdated++
 
       const actualJobId = upsertResult.id
+      jobRecord.id = actualJobId
 
       // 3. Process child entities
       const childEntities = ['job_skills', 'job_categories', 'locations']
@@ -156,6 +157,7 @@ export class TransformEngine {
             const categoryName = String(resolvedValue)
             const categoryId = await this.resolver.resolveCategory(categoryName)
             if (!categoryId) continue
+            if (rows.some((row) => row.matchBy.category_id === categoryId)) continue
             rows.push({
               table: childConfig.table,
               matchBy: { job_id: actualJobId, category_id: categoryId },
@@ -168,6 +170,7 @@ export class TransformEngine {
           } else if (childName === 'locations') {
             const rawText = String(childData.raw_text ?? resolvedValue)
             const cityId = await this.resolver.resolveCity(rawText)
+            if (rows.some((row) => row.data.city_id === (cityId ?? null) && row.data.raw_text === rawText)) continue
             rows.push({
               table: childConfig.table,
               matchBy: { job_id: actualJobId },

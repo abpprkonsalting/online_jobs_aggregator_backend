@@ -81,14 +81,18 @@ export class EntityResolver {
       return match.id
     }
 
-    // Try to find or create a country
-    let countryId: string | null = null
-    if (countryName) {
-      countryId = await this.resolveCountry(countryName)
+    if (!countryName) {
+      this.logger.warn(`Cannot create city "${name}" without a country`)
+      return null
     }
 
+    // Try to find or create a country
+    let countryId: string | null = null
+    countryId = await this.resolveCountry(countryName)
+
     const id = crypto.randomUUID()
-    await this.repo.upsertCity({ id, country_id: countryId ?? crypto.randomUUID(), name })
+    if (!countryId) return null
+    await this.repo.upsertCity({ id, country_id: countryId, name })
     this.cacheSet(key, id)
     this.logger.debug(`Created city "${name}"`)
     return id
