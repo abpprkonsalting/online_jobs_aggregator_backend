@@ -621,7 +621,7 @@ export class JobRepository {
     const rows = await query<any>(`
       SELECT DISTINCT k.name AS keyword
       FROM user_categories uc
-      JOIN category_keywords ck ON ck.category_id = uc.category_id AND ck.enabled = 1
+      JOIN category_keywords ck ON ck.category_id = uc.category_id
       JOIN keywords k ON k.id = ck.keyword_id AND k.enabled = 1
       WHERE uc.enabled = 1
       ORDER BY k.name ASC
