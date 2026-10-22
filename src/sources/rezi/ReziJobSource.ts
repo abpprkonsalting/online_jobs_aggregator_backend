@@ -115,8 +115,7 @@ export class ReziJobSource extends JobSource {
       obfuscatedIds,
       rateLimiter,
       abortController,
-      logger,
-      warnings
+      logger
     )
 
     return this.buildFetchResult(
@@ -203,8 +202,7 @@ export class ReziJobSource extends JobSource {
       obfuscatedIds,
       rateLimiter,
       abortController,
-      logger,
-      warnings
+      logger
     )
 
     return this.buildFetchResult(
@@ -220,11 +218,11 @@ export class ReziJobSource extends JobSource {
     obfuscatedIds: number[],
     rateLimiter: any,
     abortController: AbortController,
-    logger: any,
-    warnings: string[]
+    logger: any
   ): Promise<{ rawJobs: unknown[]; warnings: string[] }> {
     const detailsApiUrl = config.detailsApiUrl || 'https://api.rezi.ai/v1/search-engine/maps/jobs/details'
     const rawJobs: unknown[] = []
+    const warnings: string[] = []
 
     // The details API treats obfuscated_ids as a pool and paginates the result set
     // via page/rows_per_page (confirmed by HAR: page 1 != page 2 for same ID list).

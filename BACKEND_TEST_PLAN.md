@@ -78,7 +78,7 @@ Run the complete test suite and production build; fix failures caused by test se
 
 - [x] Inventory backend modules and establish the pre-test build baseline.
 - [x] B1 — Test infrastructure and foundational utilities (**13 tests passed**).
-- [ ] B2 — Rezi PMTiles and source adapter.
+- [x] B2 — Rezi PMTiles and source adapter (**10 tests passed**); fixed duplicate warning aggregation in detail-fetch results.
 - [ ] B3 — Transform engine and entity resolution.
 - [ ] B4 — HTTP API routers.
 - [ ] B5 — Repository and database lifecycle.
