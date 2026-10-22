@@ -2,7 +2,6 @@ import { Router, Request, Response } from 'express'
 import { body, param, query, validationResult } from 'express-validator'
 import { JobRepository } from '../persistence/JobRepository'
 import { requireRole } from '../middleware/auth'
-import { getOrchestrator } from '../orchestrator/JobOrchestrator'
 
 const router = Router()
 const repo = new JobRepository()
@@ -177,21 +176,5 @@ router.get('/fetch-runs', async (_req: Request, res: Response) => {
   const runs = await repo.listFetchRuns()
   res.json(runs)
 })
-
-// ── Trigger fetch ──
-router.post(
-  '/trigger',
-  requireRole('admin'),
-  [body('source_id').optional().isUUID(), body('geographic_area_id').optional().isUUID()],
-  async (req: Request, res: Response) => {
-    if (!validate(req, res)) return
-    const orchestrator = getOrchestrator()
-    orchestrator.triggerFetch({
-      sourceId: req.body.source_id,
-      geographicAreaId: req.body.geographic_area_id,
-    })
-    res.json({ accepted: true })
-  }
-)
 
 export default router

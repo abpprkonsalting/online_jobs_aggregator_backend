@@ -4,12 +4,6 @@ import { getConfig } from '../config'
 import { createRateLimiter } from '../utils/rate-limiter'
 import type { GeographicArea, JobSourceContext, SourceConfig } from '../sources/base/JobSource'
 
-export interface TriggerOptions {
-  sourceId?: string
-  geographicAreaId?: string
-  keywords?: string[]
-}
-
 interface RunningCycle {
   key: string
   sourceId: string
@@ -71,26 +65,18 @@ export class JobOrchestrator {
     logger.info('Orchestrator stopped')
   }
 
-  triggerFetch(opts: TriggerOptions = {}): void {
-    void this.runCycle(opts).catch((err) => {
-      logger.error('Manual trigger fetch failed', err)
+  private async runCycle(): Promise<void> {
+    // ── Passive cycle: (source, area) pairs ──
+    await this.runPassiveCycle()
+
+    // ── Proactive cycle: unified user keywords ──
+    await this.runProactiveCycle().catch((err) => {
+      logger.error('Proactive cycle error', err)
     })
   }
 
-  private async runCycle(opts?: TriggerOptions): Promise<void> {
-    // ── Passive cycle: (source, area) pairs ──
-    await this.runPassiveCycle(opts)
-
-    // ── Proactive cycle: unified user keywords ──
-    if (!opts?.sourceId) {
-      await this.runProactiveCycle().catch((err) => {
-        logger.error('Proactive cycle error', err)
-      })
-    }
-  }
-
-  private async runPassiveCycle(opts?: TriggerOptions): Promise<void> {
-    const sources = await this.loadSources(opts?.sourceId).then((rows) =>
+  private async runPassiveCycle(): Promise<void> {
+    const sources = await this.loadSources().then((rows) =>
       rows.filter((s) => s.working_mode === 'passive' || s.working_mode === 'both')
     )
     if (sources.length === 0) {
@@ -104,10 +90,7 @@ export class JobOrchestrator {
       return
     }
 
-    // Filter pairs by source if triggered manually
-    const relevantPairs = opts?.sourceId
-      ? pairs.filter((p) => p.source_id === opts.sourceId && (!opts.geographicAreaId || p.geographic_area_id === opts.geographicAreaId))
-      : pairs
+    const relevantPairs = pairs
 
     if (relevantPairs.length === 0) {
       logger.debug('No relevant source-area pairs for this cycle')
