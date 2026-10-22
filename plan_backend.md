@@ -35,7 +35,6 @@ Backend (Node.js + Express)
     │   ├── (public) GET /api/categories, /api/skills, /api/cities, /api/countries
     │   ├── (admin) CRUD on /api/sources, /api/geographic-areas, /api/areas
     │   ├── (admin) GET /api/fetch-runs, GET /api/fetch-runs/:source_id
-    │   ├── (admin) POST /api/trigger
     │   ├── (admin) GET /api/master/schema, POST /api/master/seed-*
     │   └── Auth layer wraps everything below (except /api/auth/* and /api/jobs reads for users)
     │
@@ -227,7 +226,6 @@ The Express API exposes two surfaces:
 | `DELETE /api/areas/:source_id/:area_id` | DELETE | Unlink a source from an area. |
 | `GET /api/fetch-runs` | GET | List recent fetch runs (status, timestamps, counters, metadata, warnings). |
 | `GET /api/fetch-runs/:source_id` | GET | Fetch runs for a specific source. |
-| `POST /api/trigger` | POST | Manually trigger an immediate fetch cycle (optional `source_id`/`geographic_area_id` scope). |
 
 ### 7.3 Master Table Seed (frontend bootstrap)
 
@@ -277,7 +275,7 @@ Authentication and authorization for the Express API. Stateless JWT access token
 |---|---|
 | `GET /api/auth/me`, `POST /api/auth/logout` | any authenticated user (`user` or `admin`) |
 | `GET /api/jobs`, `GET /api/jobs/:id`, `GET /api/categories|skills|cities|countries` | any authenticated user |
-| `POST/PATCH/DELETE /api/sources`, `POST/PUT/DELETE /api/geographic-areas`, `POST/DELETE /api/areas`, `GET /api/fetch-runs`, `POST /api/trigger` | `admin` |
+| `POST/PATCH/DELETE /api/sources`, `POST/PUT/DELETE /api/geographic-areas`, `POST/DELETE /api/areas`, `GET /api/fetch-runs` | `admin` |
 | `GET /api/master/schema`, `POST /api/master/seed-*` | `admin` |
 | User management (`/api/users/*`) | `admin` |
 
@@ -338,7 +336,7 @@ Global settings via `.env` (env-first), loaded by `backend/src/config/index.ts`.
 | `backend/src/api/users.ts` | User management routes (CRUD, admin only) |
 | `backend/src/api/jobs.ts` | Job list/detail endpoints |
 | `backend/src/api/master.ts` | Master table seed/snapshot endpoints |
-| `backend/src/api/admin.ts` | Admin endpoints (sources, areas, fetch_runs, trigger) |
+| `backend/src/api/admin.ts` | Admin endpoints (sources, areas, fetch_runs) |
 | `backend/src/middleware/auth.ts` | JWT middleware + role-based authorization (`requireAuth`, `requireRole`) |
 | `backend/src/utils/auth.ts` | Token sign/verify, bcrypt hash/verify helpers |
 | `backend/src/config/index.ts` | Env-first config (`CONFIG`) with defaults + bootstrap |
@@ -434,7 +432,7 @@ Global settings via `.env` (env-first), loaded by `backend/src/config/index.ts`.
 | `backend/src/api/` | REST API routes/controllers (Express) |
 | `backend/src/api/jobs.ts` | Job list/detail endpoints |
 | `backend/src/api/master.ts` | Master table seed/snapshot endpoints |
-| `backend/src/api/admin.ts` | Admin endpoints (sources, areas, fetch_runs, trigger) |
+| `backend/src/api/admin.ts` | Admin endpoints (sources, areas, fetch_runs) |
 | `backend/src/config/index.ts` | Env-first config (`CONFIG`) with defaults + bootstrap |
 | `backend/src/utils/logger.ts` | Multi-driver logger |
 | `backend/src/utils/rate-limiter.ts` | Per-source pacing helper |

@@ -60,7 +60,6 @@
 - POST /api/admin/areas { source_id, geographic_area_id, enabled }
 - DELETE /api/admin/areas/:source_id/:area_id
 - GET /api/admin/fetch-runs?source_id=
-- POST /api/admin/trigger { source_id?, geographic_area_id? }
 - GET /api/admin/master/schema
 
 ### Users (admin only)
@@ -77,7 +76,7 @@ The frontend should:
 3. Use httpOnly refresh_token cookie for /api/auth/refresh.
 4. Call GET /api/jobs with query params for filtering/sorting/pagination.
 5. Call GET /api/categories, /api/skills, /api/cities, /api/countries for filter dropdowns.
-6. Admin users can manage sources, areas, and trigger fetches via /api/admin/*.
+6. Admin users can manage sources, areas, and review fetch runs via /api/admin/*.
 
 ## Notes
 - days_waiting is computed at query time from posted_at/date_posted.

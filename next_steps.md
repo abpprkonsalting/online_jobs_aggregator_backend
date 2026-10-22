@@ -21,7 +21,7 @@ All three planning files have been updated and aligned:
 
 ### plan_backend.md
 - **Architecture diagram** (§2) now includes: Auth Layer → REST API Layer → Orchestrator → JobSource Adapters → Transform ETL → Persistence
-- **§7 REST API Layer**: Full endpoint definitions (jobs, master tables, admin CRUD, auth, trigger)
+- **§7 REST API Layer**: Endpoint definitions for jobs, master tables, admin CRUD, and auth
 - **§8 Auth Layer**: JWT access tokens + httpOnly refresh tokens, role-based access control (`admin`/`user`), v1 scope decision
 - **§5.1 Transform Engine Design**: Master tables not auto-created; adapter handles mismatches via config translation or fuzzy matching
 - **§5.2 Rezi mapping**: Standard definition `{bbox, zoom}` is Rezi's native format — no translation needed for phase 1
@@ -65,7 +65,7 @@ Based on `plan_backend.md` deliverables table, these files need to be created:
 **REST API:**
 - `backend/src/api/jobs.ts` — Job list/detail endpoints
 - `backend/src/api/master.ts` — Master table seed/snapshot endpoints
-- `backend/src/api/admin.ts` — Admin endpoints (sources, areas, fetch_runs, trigger)
+- `backend/src/api/admin.ts` — Admin endpoints (sources, areas, fetch_runs)
 
 **Transform & Adapter:**
 - `backend/src/transform/rezi.transform.json` — Rezi per-adapter transform_config

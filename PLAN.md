@@ -160,7 +160,7 @@ Current Rezi source fields (these are mapped by the adapter into the normalized 
 ## 5. Data Flow
 
 1. **Configuration:** Sources, enabled sources, and the (source, area) fetch matrix configured via database tables — `sources` (§1), `geographic_areas` (§2), and `source_geographic_areas` (§3). Per-source schedule (`interval_ms` or `cron`) stored in `sources.config`; computed per (source,area) pair also stored in `source_geographic_areas.next_run_at`.
-2. **Periodic fetch (daemon):** Daemon triggers enabled `(source, area)` pairs; checks each `source_geographic_areas` row's `next_run_at` before firing.
+2. **Periodic fetch (daemon):** The scheduler runs enabled `(source, area)` pairs when each `source_geographic_areas` row's `next_run_at` is due.
 3. **Rezi source (first source) — per geographic area:**
    a. Bbox/region → tile computation: Bbox + zoom → list of (z, x, y) tiles
    b. Offset resolution: Tile list + PMTiles directory → list of (tile_offset, tile_length)
@@ -207,7 +207,7 @@ Classification is performed by the source adapters (not a shared core pipeline) 
 | `backend/src/api/users.ts` | User management routes (CRUD, admin only). |
 | `backend/src/api/jobs.ts` | Job list/detail endpoints. |
 | `backend/src/api/master.ts` | Master table seed/snapshot endpoints. |
-| `backend/src/api/admin.ts` | Admin endpoints (sources, areas, fetch_runs, trigger). |
+| `backend/src/api/admin.ts` | Admin endpoints (sources, areas, fetch_runs). |
 | `backend/src/middleware/auth.ts` | JWT middleware + role-based authorization (`requireAuth`, `requireRole`). |
 | `backend/src/utils/auth.ts` | Token sign/verify, bcrypt hash/verify helpers. |
 | `backend/src/pipeline/` | N/A — classification is adapter-specific; handled within each `JobSource` adapter. |
