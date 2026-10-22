@@ -80,7 +80,7 @@ Run the complete test suite and production build; fix failures caused by test se
 - [x] B1 — Test infrastructure and foundational utilities (**13 tests passed**).
 - [x] B2 — Rezi PMTiles and source adapter (**10 tests passed**); fixed duplicate warning aggregation in detail-fetch results.
 - [x] B3 — Transform engine and entity resolution (**7 tests passed**); corrected persisted job IDs in relation sync, deduplicated categories/locations, and prevented city rows with fabricated country IDs.
-- [ ] B4 — HTTP API routers.
+- [x] B4 — HTTP API routers (**17 tests passed**); added cookie parsing to the API server so refresh-token cookies reach authentication routes.
 - [ ] B5 — Repository and database lifecycle.
 - [ ] B6 — Orchestrator scheduling and cycles.
 - [ ] B7 — Full suite and final verification.

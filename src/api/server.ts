@@ -1,4 +1,5 @@
 import express from 'express'
+import cookieParser from 'cookie-parser'
 import authRoutes from './auth'
 import jobsRoutes from './jobs'
 import usersRoutes from './users'
@@ -13,6 +14,7 @@ const app = express()
 
 app.use(express.json())
 app.use(express.urlencoded({ extended: true }))
+app.use(cookieParser())
 
 const config = getConfig()
 
