@@ -16,6 +16,7 @@ export class JobOrchestrator {
   private config = getConfig()
   private runningCycles = new Map<string, RunningCycle>()
   private stop$ = false
+  private interval: ReturnType<typeof setInterval> | null = null
   private sources = new Map<string, SourceConfig>()
   private rateLimiters = new Map<string, ReturnType<typeof createRateLimiter>>()
 
@@ -35,10 +36,12 @@ export class JobOrchestrator {
 
     // Main poll loop: run immediately, then every POLL_INTERVAL_MS
     await this.runCycle()
+    if (this.stop$) return
 
-    const interval = setInterval(async () => {
+    this.interval = setInterval(async () => {
       if (this.stop$) {
-        clearInterval(interval)
+        if (this.interval) clearInterval(this.interval)
+        this.interval = null
         return
       }
       await this.runCycle().catch((err) => {
@@ -47,12 +50,16 @@ export class JobOrchestrator {
     }, this.config.pollIntervalMs)
 
     // Keep the interval from holding the process open
-    if (interval.unref) interval.unref()
+    if (this.interval.unref) this.interval.unref()
   }
 
   async stop(): Promise<void> {
     logger.info('Stopping orchestrator...')
     this.stop$ = true
+    if (this.interval) {
+      clearInterval(this.interval)
+      this.interval = null
+    }
 
     // Await in-flight cycles with a bounded wait
     if (this.runningCycles.size > 0) {
@@ -68,6 +75,7 @@ export class JobOrchestrator {
   private async runCycle(): Promise<void> {
     // ── Passive cycle: (source, area) pairs ──
     await this.runPassiveCycle()
+    if (this.stop$) return
 
     // ── Proactive cycle: unified user keywords ──
     await this.runProactiveCycle().catch((err) => {
@@ -90,7 +98,8 @@ export class JobOrchestrator {
       return
     }
 
-    const relevantPairs = pairs
+    const passiveSourceIds = new Set(sources.map((source) => source.id))
+    const relevantPairs = pairs.filter((pair) => passiveSourceIds.has(pair.source_id))
 
     if (relevantPairs.length === 0) {
       logger.debug('No relevant source-area pairs for this cycle')
@@ -188,14 +197,10 @@ export class JobOrchestrator {
       attempts++
 
       try {
-        const timeoutPromise = new Promise<never>((_resolve, reject) => {
-          setTimeout(() => reject(new Error(`Fetch timed out after ${fetchTimeout}ms`)), fetchTimeout)
-        })
-
-        result = await Promise.race([
+        result = await this.withTimeout(
           this.fetchFromAdapterByKeywords(ctx, keywords),
-          timeoutPromise,
-        ])
+          fetchTimeout,
+        )
 
         break
       } catch (err) {
@@ -364,14 +369,7 @@ export class JobOrchestrator {
       attempts++
 
       try {
-        const timeoutPromise = new Promise<never>((_resolve, reject) => {
-          setTimeout(() => reject(new Error(`Fetch timed out after ${fetchTimeout}ms`)), fetchTimeout)
-        })
-
-        result = await Promise.race([
-          this.fetchFromAdapter(ctx, area),
-          timeoutPromise,
-        ])
+        result = await this.withTimeout(this.fetchFromAdapter(ctx, area), fetchTimeout)
 
         break
       } catch (err) {
@@ -546,6 +544,19 @@ export class JobOrchestrator {
 
   private sleep(ms: number): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, ms))
+  }
+
+  private async withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
+    let timeout: ReturnType<typeof setTimeout> | undefined
+    const timeoutPromise = new Promise<never>((_resolve, reject) => {
+      timeout = setTimeout(() => reject(new Error(`Fetch timed out after ${timeoutMs}ms`)), timeoutMs)
+    })
+
+    try {
+      return await Promise.race([promise, timeoutPromise])
+    } finally {
+      if (timeout) clearTimeout(timeout)
+    }
   }
 }
 

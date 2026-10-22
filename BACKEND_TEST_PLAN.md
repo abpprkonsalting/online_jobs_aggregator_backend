@@ -82,7 +82,7 @@ Run the complete test suite and production build; fix failures caused by test se
 - [x] B3 — Transform engine and entity resolution (**7 tests passed**); corrected persisted job IDs in relation sync, deduplicated categories/locations, and prevented city rows with fabricated country IDs.
 - [x] B4 — HTTP API routers (**17 tests passed**); added cookie parsing to the API server so refresh-token cookies reach authentication routes.
 - [x] B5 — Repository and database lifecycle (**15 tests passed**); verified parameterized repository operations, pool/transaction cleanup, idempotent migration behavior, and admin seeding without a live database.
-- [ ] B6 — Orchestrator scheduling and cycles.
+- [x] B6 — Orchestrator scheduling and cycles (**9 tests passed**); filtered passive pairs by working mode, cleared timeout timers, and made stop cancel polling and skip not-yet-started proactive work.
 - [ ] B7 — Full suite and final verification.
 
 ## Known test boundaries
