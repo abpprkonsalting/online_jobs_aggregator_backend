@@ -16,3 +16,5 @@ yarn-error.log*
 .idea/
 *.tsbuildinfo
 plan_backend_inconsistencies.md
+work_reports/
+docs/
