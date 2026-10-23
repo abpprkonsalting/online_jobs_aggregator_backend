@@ -1,0 +1,28 @@
+[Unit]
+Description=Map Rezi Backend API
+After=network.target mysql.service
+
+[Service]
+Type=simple
+User=map_rezi
+Group=map_rezi
+WorkingDirectory=/var/www/map_rezi/backend
+Environment=NODE_ENV=production
+Environment=LOG_DIR=/var/log/map_rezi
+Environment=CACHE_DIR=/var/lib/map_rezi
+ExecStart=/usr/bin/node dist/api/server.js
+Restart=always
+RestartSec=5
+StateDirectory=map_rezi
+LogsDirectory=map_rezi
+UMask=0027
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+SyslogIdentifier=map-rezi-api
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

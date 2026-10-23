@@ -3,12 +3,15 @@ name: Deploy Backend
 on:
   push:
     branches: [master]
+    tags: ['v*']
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -19,8 +22,16 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Run backend tests
+        run: npm test
+
       - name: Build TypeScript
         run: npm run build
+
+      - name: Generate deployment version metadata
+        env:
+          DEPLOYMENT_ENVIRONMENT: production
+        run: npm run version:metadata
 
       - name: Write production .env
         env:
@@ -42,7 +53,10 @@ jobs:
           eval "$(ssh-agent -s)"
           printf '%s\n' "$SSH_KEY" | tr -d '\r' | ssh-add -
           chmod 600 .env
-          rsync -avz -e "ssh -p $VPS_SSH_PORT -o StrictHostKeyChecking=yes" \
-            dist .env package.json package-lock.json "$VPS_USER@$VPS_HOST:/var/www/map_rezi/backend/"
+          SSH_RSYNC="ssh -p $VPS_SSH_PORT -o StrictHostKeyChecking=yes"
+          rsync -avz --delete -e "$SSH_RSYNC" \
+            dist/ "$VPS_USER@$VPS_HOST:/var/www/map_rezi/backend/dist/"
+          rsync -avz -e "$SSH_RSYNC" \
+            .env package.json package-lock.json "$VPS_USER@$VPS_HOST:/var/www/map_rezi/backend/"
           ssh -p "$VPS_SSH_PORT" -o StrictHostKeyChecking=yes "$VPS_USER@$VPS_HOST" \
-            "cd /var/www/map_rezi/backend && npm ci --omit=dev && sudo systemctl restart map-rezi-api map-rezi-fetcher"
+            "cd /var/www/map_rezi/backend && chgrp map_rezi .env && chmod 640 .env && npm ci --omit=dev && chgrp -R map_rezi dist node_modules && chmod -R g+rX dist node_modules && chgrp map_rezi package.json package-lock.json && chmod g+r package.json package-lock.json && sudo systemctl restart map-rezi-api map-rezi-fetcher"

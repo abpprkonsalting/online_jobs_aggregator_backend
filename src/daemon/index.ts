@@ -2,11 +2,13 @@ import { ensureDatabase, seedAdminUser, closeDbPool } from '../database/migratio
 import { getConfig } from '../config'
 import { JobOrchestrator } from '../orchestrator/JobOrchestrator'
 import { logger } from '../utils/logger'
+import { versionLogFields } from '../utils/version'
 
 async function main() {
   const config = getConfig()
 
-  logger.info('Daemon bootstrapping', {
+  logger.info('Fetcher service starting', {
+    ...versionLogFields('map-rezi-fetcher'),
     nodeEnv: config.nodeEnv,
     port: config.port,
     dbDialect: config.dbDialect,

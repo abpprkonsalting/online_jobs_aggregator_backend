@@ -5,10 +5,13 @@ import jobsRoutes from './jobs'
 import usersRoutes from './users'
 import adminRoutes from './admin'
 import masterRoutes from './master'
+import versionRoutes from './version'
 import { requireAuthStrict, requireRole } from '../middleware/auth'
 import { ensureDatabase, seedAdminUser } from '../database/migrations'
 import { getConfig } from '../config'
 import JobRepository from '../persistence/JobRepository'
+import { logger } from '../utils/logger'
+import { versionLogFields } from '../utils/version'
 
 const app = express()
 
@@ -19,6 +22,7 @@ app.use(cookieParser())
 const config = getConfig()
 
 async function start() {
+  logger.info('API service starting', versionLogFields('map-rezi-api'))
   await ensureDatabase()
   await seedAdminUser(config.adminEmail, config.adminPassword, 'admin')
 
@@ -44,6 +48,8 @@ async function start() {
   })
 
   app.use('/api/auth', authRoutes)
+  app.use('/version', versionRoutes)
+  app.use('/api/version', versionRoutes)
   app.use('/api/jobs', requireAuthStrict, jobsRoutes)
   app.use('/api/users', requireAuthStrict, usersRoutes)
   app.use('/api/admin', requireAuthStrict, requireRole('admin'), adminRoutes)
@@ -54,7 +60,7 @@ async function start() {
   app.use('/api/countries', requireAuthStrict, countriesRouter)
 
   app.listen(config.port, () => {
-    console.log(`Server listening on port ${config.port}`)
+    logger.info('API server listening', { port: config.port })
   })
 }
 

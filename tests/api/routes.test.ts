@@ -64,6 +64,7 @@ import jobsRoutes from '../../src/api/jobs'
 import usersRoutes from '../../src/api/users'
 import adminRoutes from '../../src/api/admin'
 import masterRoutes from '../../src/api/master'
+import versionRoutes from '../../src/api/version'
 import { requireAuthStrict, requireRole } from '../../src/middleware/auth'
 import { hashPassword, hashToken } from '../../src/utils/auth'
 
@@ -80,6 +81,8 @@ function createApp() {
   app.use(express.json())
   app.use(cookieParser())
   app.use('/auth', authRoutes)
+  app.use('/version', versionRoutes)
+  app.use('/api/version', versionRoutes)
   app.use('/jobs', requireAuthStrict, jobsRoutes)
   app.use('/users', requireAuthStrict, usersRoutes)
   app.use('/admin', requireAuthStrict, requireRole('admin'), adminRoutes)
@@ -124,6 +127,28 @@ describe('HTTP API routers', () => {
     })
     repo.listKeywords.mockResolvedValue([])
     repo.listCategories.mockResolvedValue([])
+  })
+
+  describe('version endpoint', () => {
+    it('reports public build metadata without exposing artifact or environment secrets', async () => {
+      const app = createApp()
+      const direct = await request(app).get('/version')
+      const proxied = await request(app).get('/api/version')
+
+      expect(direct.status).toBe(200)
+      expect(proxied.status).toBe(200)
+      expect(proxied.body).toMatchObject({
+        releaseTag: null,
+        buildStatus: 'development',
+        environment: expect.any(String),
+      })
+      expect(proxied.body).toHaveProperty('commitSha')
+      expect(proxied.body).toHaveProperty('deploymentId')
+      expect(proxied.body).not.toHaveProperty('artifactSha256')
+      expect(proxied.body).not.toHaveProperty('jwtSecret')
+      expect(proxied.body).not.toHaveProperty('databaseUrl')
+      expect(proxied.body).not.toHaveProperty('path')
+    })
   })
 
   describe('authentication', () => {

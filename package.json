@@ -8,6 +8,9 @@
     "start": "node dist/daemon/index.js",
     "dev": "ts-node src/daemon/index.ts",
     "api": "ts-node src/api/server.ts",
+    "release:plan": "node scripts/versioning.cjs plan",
+    "release:tag": "node scripts/versioning.cjs tag",
+    "version:metadata": "node scripts/versioning.cjs metadata",
     "test": "vitest run",
     "test:watch": "vitest"
   },
