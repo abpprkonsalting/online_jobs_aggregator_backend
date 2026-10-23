@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express'
 import { body, validationResult } from 'express-validator'
-import { AuthRequest, optionalAuth } from '../middleware/auth'
+import { AuthRequest, requireAuthStrict } from '../middleware/auth'
 import { signAccessToken, signRefreshToken, verifyToken, verifyTokenHash, hashToken, hashPassword, verifyPassword } from '../utils/auth'
 import { JobRepository } from '../persistence/JobRepository'
 import { getConfig } from '../config'
@@ -124,9 +124,9 @@ router.post('/logout', async (req: AuthRequest, res: Response) => {
   res.json({ success: true })
 })
 
-router.get('/me', optionalAuth, (req: AuthRequest, res: Response) => {
+router.get('/me', requireAuthStrict, (req: AuthRequest, res: Response) => {
   if (!req.auth) {
-    res.status(401).json({ error: 'Not authenticated' })
+    res.status(401).json({ error: 'Authentication required' })
     return
   }
   res.json({ id: req.auth.sub, email: req.auth.email, role: req.auth.role })

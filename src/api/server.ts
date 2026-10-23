@@ -5,7 +5,7 @@ import jobsRoutes from './jobs'
 import usersRoutes from './users'
 import adminRoutes from './admin'
 import masterRoutes from './master'
-import { requireAuthStrict, optionalAuth } from '../middleware/auth'
+import { requireAuthStrict, requireRole } from '../middleware/auth'
 import { ensureDatabase, seedAdminUser } from '../database/migrations'
 import { getConfig } from '../config'
 import JobRepository from '../persistence/JobRepository'
@@ -44,14 +44,14 @@ async function start() {
   })
 
   app.use('/api/auth', authRoutes)
-  app.use('/api/jobs', optionalAuth, jobsRoutes)
+  app.use('/api/jobs', requireAuthStrict, jobsRoutes)
   app.use('/api/users', requireAuthStrict, usersRoutes)
-  app.use('/api/admin', requireAuthStrict, adminRoutes)
-  app.use('/api/master', requireAuthStrict, masterRoutes)
-  app.use('/api/categories', optionalAuth, categoriesRouter)
-  app.use('/api/skills', optionalAuth, skillsRouter)
-  app.use('/api/cities', optionalAuth, citiesRouter)
-  app.use('/api/countries', optionalAuth, countriesRouter)
+  app.use('/api/admin', requireAuthStrict, requireRole('admin'), adminRoutes)
+  app.use('/api/master', requireAuthStrict, requireRole('admin'), masterRoutes)
+  app.use('/api/categories', requireAuthStrict, categoriesRouter)
+  app.use('/api/skills', requireAuthStrict, skillsRouter)
+  app.use('/api/cities', requireAuthStrict, citiesRouter)
+  app.use('/api/countries', requireAuthStrict, countriesRouter)
 
   app.listen(config.port, () => {
     console.log(`Server listening on port ${config.port}`)

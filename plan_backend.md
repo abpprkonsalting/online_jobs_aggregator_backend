@@ -30,13 +30,13 @@ Backend (Node.js + Express)
     │   └── DELETE /api/users/:id — deactivate user (admin only)
     │
     ├── REST API Layer
-    │   ├── (public) GET /api/jobs — list/filter/sort jobs
-    │   ├── (public) GET /api/jobs/:id — single job detail
-    │   ├── (public) GET /api/categories, /api/skills, /api/cities, /api/countries
+    │   ├── (authenticated) GET /api/jobs — list/filter/sort jobs
+    │   ├── (authenticated) GET /api/jobs/:id — single job detail
+    │   ├── (authenticated) GET /api/categories, /api/skills, /api/cities, /api/countries
     │   ├── (admin) CRUD on /api/sources, /api/geographic-areas, /api/areas
     │   ├── (admin) GET /api/fetch-runs, GET /api/fetch-runs/:source_id
     │   ├── (admin) GET /api/master/schema, POST /api/master/seed-*
-    │   └── Auth layer wraps everything below (except /api/auth/* and /api/jobs reads for users)
+    │   └── Auth layer wraps all application data routes; admin routes additionally require the admin role
     │
     ├── Orchestrator (RxJS-style: interval, fire & forget)
     │   ├── loads config from .env (exclusively), including enabled sources.

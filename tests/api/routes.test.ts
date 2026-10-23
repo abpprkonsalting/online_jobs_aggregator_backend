@@ -64,7 +64,7 @@ import jobsRoutes from '../../src/api/jobs'
 import usersRoutes from '../../src/api/users'
 import adminRoutes from '../../src/api/admin'
 import masterRoutes from '../../src/api/master'
-import { optionalAuth, requireAuthStrict } from '../../src/middleware/auth'
+import { requireAuthStrict, requireRole } from '../../src/middleware/auth'
 import { hashPassword, hashToken } from '../../src/utils/auth'
 
 const adminId = 'a3cfeb1d-3e89-4cc6-9b04-2fd43c25303b'
@@ -80,10 +80,10 @@ function createApp() {
   app.use(express.json())
   app.use(cookieParser())
   app.use('/auth', authRoutes)
-  app.use('/jobs', optionalAuth, jobsRoutes)
+  app.use('/jobs', requireAuthStrict, jobsRoutes)
   app.use('/users', requireAuthStrict, usersRoutes)
-  app.use('/admin', requireAuthStrict, adminRoutes)
-  app.use('/master', requireAuthStrict, masterRoutes)
+  app.use('/admin', requireAuthStrict, requireRole('admin'), adminRoutes)
+  app.use('/master', requireAuthStrict, requireRole('admin'), masterRoutes)
   return app
 }
 
@@ -247,13 +247,16 @@ describe('HTTP API routers', () => {
       { id: 'job-3', source_id: otherUserId, title: 'C', organization: 'Other Co', salary_min: 70000, salary_max: 90000, allow_remote: false },
     ]
 
-    it('allows public listing and applies supported filters, sorting, and pagination', async () => {
+    it('requires sign-in and applies supported filters, sorting, and pagination', async () => {
       repo.findJobs.mockResolvedValue(jobs)
 
-      const response = await request(createApp()).get(
+      const app = createApp()
+      const anonymous = await request(app).get('/jobs')
+      const response = await asUser(request(app).get(
         `/jobs?source_id=${sourceId}&allow_remote=true&salary_min=80000&organization=example&sort=salary_min&sortDir=asc&offset=1&limit=1`,
-      )
+      ))
 
+      expect(anonymous.status).toBe(401)
       expect(response.status).toBe(200)
       expect(response.body).toMatchObject({
         total: 2,
@@ -266,8 +269,8 @@ describe('HTTP API routers', () => {
 
     it('validates list query parameters and returns not found for missing job details', async () => {
       const app = createApp()
-      const invalid = await request(app).get('/jobs?limit=1000&sort=unknown')
-      const missing = await request(app).get('/jobs/missing')
+      const invalid = await asUser(request(app).get('/jobs?limit=1000&sort=unknown'))
+      const missing = await asUser(request(app).get('/jobs/missing'))
 
       expect(invalid.status).toBe(400)
       expect(invalid.body.errors.length).toBeGreaterThan(0)
@@ -360,6 +363,7 @@ describe('HTTP API routers', () => {
     it('protects source administration, validates payloads, and creates sources', async () => {
       const app = createApp()
       const unauthorized = await request(app).get('/admin/sources')
+      const forbidden = await asUser(request(app).get('/admin/sources'))
       const invalid = await asAdmin(request(app).post('/admin/sources').send({
         name: 'Bad source',
         type: 'unknown',
@@ -374,6 +378,7 @@ describe('HTTP API routers', () => {
       }))
 
       expect(unauthorized.status).toBe(401)
+      expect(forbidden.status).toBe(403)
       expect(invalid.status).toBe(400)
       expect(created.status).toBe(201)
       expect(created.body).toMatchObject({ id: sourceId, name: 'Rezi' })
@@ -453,6 +458,8 @@ describe('HTTP API routers', () => {
 
     it('serves master schema and validates/seeds skills and category-keyword links', async () => {
       const app = createApp()
+      const anonymous = await request(app).get('/master/schema')
+      const forbidden = await asUser(request(app).get('/master/schema'))
       const schema = await asAdmin(request(app).get('/master/schema'))
       const invalidSeed = await asAdmin(request(app).post('/master/seed-skills').send({ skills: [] }))
       const seed = await asAdmin(request(app).post('/master/seed-skills').send({
@@ -465,6 +472,8 @@ describe('HTTP API routers', () => {
         enabled: false,
       }))
 
+      expect(anonymous.status).toBe(401)
+      expect(forbidden.status).toBe(403)
       expect(schema.status).toBe(200)
       expect(schema.body).toHaveProperty('geographic_areas')
       expect(invalidSeed.status).toBe(400)
