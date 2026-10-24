@@ -107,7 +107,10 @@ describe('release versioning', () => {
     writeFileSync(path.join(directory, '.gitignore'), 'dist/\n')
     const output = path.join(dist, 'version.json')
 
-    const metadata = buildMetadata(directory, output, 'production', 'run-123.2')
+    const metadata = buildMetadata(directory, output, {
+      environment: 'production',
+      deploymentId: 'run-123.2',
+    })
     expect(metadata).toMatchObject({
       releaseTag: 'v1.0.0',
       buildStatus: 'release',
@@ -119,6 +122,25 @@ describe('release versioning', () => {
     expect(JSON.parse(readFileSync(output, 'utf8'))).toEqual(metadata)
     expect(readFileSync(path.join(dist, 'manifest.sha256'), 'utf8')).toContain('server.js')
     expect(loadVersionMetadata(dist, 'production')).toEqual(metadata)
+
+    const taggedMetadata = buildMetadata(directory, output, {
+      environment: 'production',
+      deploymentId: 'run-123.3',
+      workflowRefType: 'tag',
+      workflowRefName: 'v1.0.0',
+    })
+    expect(taggedMetadata).toMatchObject({
+      releaseTag: 'v1.0.0',
+      buildStatus: 'release',
+      commitSha,
+    })
+
+    expect(() => buildMetadata(directory, output, {
+      environment: 'production',
+      deploymentId: 'run-123.4',
+      workflowRefType: 'tag',
+      workflowRefName: 'v1.0.1',
+    })).toThrow('Deployment tag v1.0.1 is not an annotated SemVer release tag for this commit.')
 
     writeFileSync(path.join(dist, 'server.js'), 'modified server')
     expect(() => loadVersionMetadata(dist, 'production'))

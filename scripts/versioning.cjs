@@ -144,18 +144,20 @@ function hashArtifacts(distDirectory) {
   return createHash('sha256').update(entries.join('\n')).digest('hex')
 }
 
-function buildMetadata(cwd, outputPath, environment, deploymentId) {
+function buildMetadata(cwd, outputPath, {
+  environment = 'unknown',
+  deploymentId = null,
+  workflowRefType = null,
+  workflowRefName = null,
+} = {}) {
   const commitSha = runGit(['rev-parse', 'HEAD'], { cwd })
   const exactTags = getReleaseTags(cwd).filter((tag) => tag.commit === commitSha)
   if (exactTags.length > 1) {
     throw new Error(`Commit ${commitSha} has multiple official release tags: ${exactTags.map((tag) => tag.tag).join(', ')}`)
   }
   const releaseTag = exactTags[0]?.tag ?? null
-  if (
-    process.env.GITHUB_REF_TYPE === 'tag'
-    && (releaseTag !== process.env.GITHUB_REF_NAME || !releaseTag)
-  ) {
-    throw new Error(`Deployment tag ${process.env.GITHUB_REF_NAME} is not an annotated SemVer release tag for this commit.`)
+  if (workflowRefType === 'tag' && (releaseTag !== workflowRefName || !releaseTag)) {
+    throw new Error(`Deployment tag ${workflowRefName} is not an annotated SemVer release tag for this commit.`)
   }
   const distDirectory = path.dirname(outputPath)
   const artifactSha256 = hashArtifacts(distDirectory)
@@ -166,7 +168,7 @@ function buildMetadata(cwd, outputPath, environment, deploymentId) {
     commitSha,
     buildTimestampUtc: new Date().toISOString(),
     environment: environment || 'unknown',
-    deploymentId: deploymentId || null,
+    deploymentId,
     artifactSha256,
   }
   mkdirSync(distDirectory, { recursive: true })
@@ -190,10 +192,14 @@ function main() {
     const metadata = buildMetadata(
       cwd,
       outputPath,
-      process.env.DEPLOYMENT_ENVIRONMENT ?? process.env.NODE_ENV ?? 'unknown',
-      process.env.GITHUB_RUN_ID
-        ? `${process.env.GITHUB_RUN_ID}.${process.env.GITHUB_RUN_ATTEMPT ?? '1'}`
-        : null,
+      {
+        environment: process.env.DEPLOYMENT_ENVIRONMENT ?? process.env.NODE_ENV ?? 'unknown',
+        deploymentId: process.env.GITHUB_RUN_ID
+          ? `${process.env.GITHUB_RUN_ID}.${process.env.GITHUB_RUN_ATTEMPT ?? '1'}`
+          : null,
+        workflowRefType: process.env.GITHUB_REF_TYPE ?? null,
+        workflowRefName: process.env.GITHUB_REF_NAME ?? null,
+      },
     )
     console.log(JSON.stringify(metadata, null, 2))
     return
