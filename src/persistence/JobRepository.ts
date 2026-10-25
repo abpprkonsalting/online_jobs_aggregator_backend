@@ -65,6 +65,146 @@ export class JobRepository {
     return query<any>(`SELECT * FROM jobs ORDER BY posted_at DESC, date_posted DESC`)
   }
 
+  async findJobsWithFilters(params: {
+    limit?: number
+    offset?: number
+    sort?: string
+    sortDir?: 'asc' | 'desc'
+    categoryIds?: string[]
+    skillIds?: string[]
+    cityIds?: string[]
+    countryIds?: string[]
+    sourceId?: string
+    allowRemote?: boolean
+    salaryMin?: number
+    salaryMax?: number
+    organization?: string
+    userId?: string // for followed categories
+  }): Promise<{ jobs: any[]; total: number }> {
+    const {
+      limit = 20,
+      offset = 0,
+      sort = 'posted_at',
+      sortDir = 'desc',
+      categoryIds,
+      skillIds,
+      cityIds,
+      countryIds,
+      sourceId,
+      allowRemote,
+      salaryMin,
+      salaryMax,
+      organization,
+      userId,
+    } = params
+
+    // Allowlist for sort columns to prevent SQL injection
+    const allowedSortColumns = [
+      'posted_at',
+      'date_posted',
+      'title',
+      'organization',
+      'salary_min',
+      'salary_max',
+      'created_at',
+      'updated_at',
+    ]
+    const safeSort = allowedSortColumns.includes(sort) ? sort : 'posted_at'
+    const safeSortDir = sortDir === 'asc' ? 'ASC' : 'DESC'
+
+    const whereClauses: string[] = []
+    const params_: unknown[] = []
+
+    // Source filter
+    if (sourceId) {
+      whereClauses.push(`j.source_id = ?`)
+      params_.push(sourceId)
+    }
+
+    // Allow remote filter
+    if (allowRemote !== undefined) {
+      whereClauses.push(`j.allow_remote = ?`)
+      params_.push(allowRemote)
+    }
+
+    // Salary range filters
+    if (salaryMin !== undefined) {
+      whereClauses.push(`j.salary_min >= ?`)
+      params_.push(salaryMin)
+    }
+    if (salaryMax !== undefined) {
+      whereClauses.push(`j.salary_max <= ?`)
+      params_.push(salaryMax)
+    }
+
+    // Organization filter (case-insensitive partial match)
+    if (organization) {
+      whereClauses.push(`LOWER(j.organization) LIKE ?`)
+      params_.push(`%${organization.toLowerCase()}%`)
+    }
+
+    // Category filter - join job_categories
+    if (categoryIds && categoryIds.length > 0) {
+      const placeholders = categoryIds.map(() => '?').join(', ')
+      whereClauses.push(`j.id IN (SELECT DISTINCT job_id FROM job_categories WHERE category_id IN (${placeholders}))`)
+      params_.push(...categoryIds)
+    }
+
+    // Skill filter - join job_skills
+    if (skillIds && skillIds.length > 0) {
+      const placeholders = skillIds.map(() => '?').join(', ')
+      whereClauses.push(`j.id IN (SELECT DISTINCT job_id FROM job_skills WHERE skill_id IN (${placeholders}))`)
+      params_.push(...skillIds)
+    }
+
+    // City filter - join locations
+    if (cityIds && cityIds.length > 0) {
+      const placeholders = cityIds.map(() => '?').join(', ')
+      whereClauses.push(`j.id IN (SELECT DISTINCT job_id FROM locations WHERE city_id IN (${placeholders}))`)
+      params_.push(...cityIds)
+    }
+
+    // Country filter - join locations -> cities -> countries
+    if (countryIds && countryIds.length > 0) {
+      const placeholders = countryIds.map(() => '?').join(', ')
+      whereClauses.push(`j.id IN (
+        SELECT DISTINCT l.job_id FROM locations l
+        JOIN cities c ON c.id = l.city_id
+        WHERE c.country_id IN (${placeholders})
+      )`)
+      params_.push(...countryIds)
+    }
+
+    // User's followed categories
+    if (userId) {
+      whereClauses.push(`j.id IN (
+        SELECT DISTINCT jc.job_id FROM job_categories jc
+        JOIN user_categories uc ON uc.category_id = jc.category_id
+        WHERE uc.user_id = ? AND uc.enabled = 1
+      )`)
+      params_.push(userId)
+    }
+
+    const whereSql = whereClauses.length > 0 ? `WHERE ${whereClauses.join(' AND ')}` : ''
+
+    // Count total (for pagination metadata)
+    const countSql = `SELECT COUNT(*) as total FROM jobs j ${whereSql}`
+    const countRows = await query<Array<{ total: number } & RowDataPacket>>(countSql, params_)
+    const total = countRows[0]?.total ?? 0
+
+    // Fetch page with sort and pagination
+    const dataSql = `
+      SELECT j.* FROM jobs j
+      ${whereSql}
+      ORDER BY j.${safeSort} ${safeSortDir}
+      LIMIT ? OFFSET ?
+    `
+    const dataParams = [...params_, limit, offset]
+    const jobs = await query<any>(dataSql, dataParams)
+
+    return { jobs, total }
+  }
+
   async findJobIdsByCategories(categoryIds: string[]): Promise<string[]> {
     if (categoryIds.length === 0) return []
 

@@ -20,6 +20,7 @@ const { repo } = vi.hoisted(() => ({
     createUserCategory: vi.fn(),
     deleteUserCategory: vi.fn(),
     findJobs: vi.fn(),
+    findJobsWithFilters: vi.fn(),
     findJobIdsByCategories: vi.fn(),
     getJobWithDetails: vi.fn(),
     listSources: vi.fn(),
@@ -109,7 +110,7 @@ describe('HTTP API routers', () => {
     repo.createUser.mockResolvedValue(userId)
     repo.getRefreshTokenByUser.mockResolvedValue(null)
     repo.listUserCategories.mockResolvedValue([])
-    repo.findJobs.mockResolvedValue([])
+    repo.findJobsWithFilters.mockResolvedValue({ jobs: [], total: 0 })
     repo.findJobIdsByCategories.mockResolvedValue([])
     repo.getJobWithDetails.mockResolvedValue(null)
     repo.listSources.mockResolvedValue([])
@@ -272,24 +273,16 @@ describe('HTTP API routers', () => {
       { id: 'job-3', source_id: otherUserId, title: 'C', organization: 'Other Co', salary_min: 70000, salary_max: 90000, allow_remote: false },
     ]
 
-    it('requires sign-in and applies supported filters, sorting, and pagination', async () => {
-      repo.findJobs.mockResolvedValue(jobs)
+    it('requires sign-in for jobs endpoint', async () => {
+      repo.findJobsWithFilters.mockResolvedValue({ jobs: [], total: 0 })
 
       const app = createApp()
       const anonymous = await request(app).get('/jobs')
-      const response = await asUser(request(app).get(
-        `/jobs?source_id=${sourceId}&allow_remote=true&salary_min=80000&organization=example&sort=salary_min&sortDir=asc&offset=1&limit=1`,
-      ))
+      const response = await asUser(request(app).get('/jobs'))
 
       expect(anonymous.status).toBe(401)
       expect(response.status).toBe(200)
-      expect(response.body).toMatchObject({
-        total: 2,
-        limit: 1,
-        offset: 1,
-        hasMore: false,
-        jobs: [{ id: 'job-1' }],
-      })
+      expect(response.body).toEqual({ jobs: [], total: 0, limit: 20, offset: 0, hasMore: false })
     })
 
     it('validates list query parameters and returns not found for missing job details', async () => {
@@ -303,17 +296,60 @@ describe('HTTP API routers', () => {
       expect(missing.body).toEqual({ error: 'Job not found' })
     })
 
-    it('limits authenticated users to jobs in their followed categories', async () => {
-      repo.findJobs.mockResolvedValue(jobs)
-      repo.listUserCategories.mockResolvedValue([{ id: categoryId }])
-      repo.findJobIdsByCategories.mockResolvedValue(['job-2'])
+    it('filters jobs by followed categories via findJobsWithFilters', async () => {
+      repo.findJobsWithFilters.mockResolvedValue({ jobs: [{ id: 'job-2', source_id: sourceId, title: 'B' }], total: 1 })
 
       const response = await asUser(request(createApp()).get('/jobs'))
 
       expect(response.status).toBe(200)
       expect(response.body.jobs.map((job: { id: string }) => job.id)).toEqual(['job-2'])
-      expect(repo.findJobIdsByCategories).toHaveBeenCalledWith([categoryId])
+      expect(repo.findJobsWithFilters).toHaveBeenCalledWith(expect.objectContaining({
+        userId: userId,
+      }))
     })
+
+    it('applies filters, sorting, and pagination via findJobsWithFilters', async () => {
+      const job1 = { id: 'job-1', source_id: sourceId, title: 'A', organization: 'Example Labs', salary_min: 90000, salary_max: 120000, allow_remote: true }
+      const job2 = { id: 'job-2', source_id: sourceId, title: 'B', organization: 'Example Inc', salary_min: 80000, salary_max: 100000, allow_remote: true }
+      // Mock returns paginated result (what repo would return for limit=1, offset=1)
+      repo.findJobsWithFilters.mockResolvedValue({ jobs: [job2], total: 2 })
+
+      const response = await asUser(request(createApp()).get(
+        `/jobs?source_id=${sourceId}&allow_remote=true&salary_min=80000&organization=example&sort=salary_min&sortDir=asc&offset=1&limit=1`,
+      ))
+
+      expect(response.status).toBe(200)
+      expect(response.body).toMatchObject({
+        total: 2,
+        limit: 1,
+        offset: 1,
+        hasMore: false,
+        jobs: [{ id: 'job-2' }],
+      })
+      expect(repo.findJobsWithFilters).toHaveBeenCalledWith(expect.objectContaining({
+        limit: 1,
+        offset: 1,
+        sort: 'salary_min',
+        sortDir: 'asc',
+        sourceId,
+        allowRemote: true,
+        salaryMin: 80000,
+        organization: 'example',
+        userId: userId,
+      }))
+    })
+
+    it('validates list query parameters and returns not found for missing job details', async () => {
+      const app = createApp()
+      const invalid = await asUser(request(app).get('/jobs?limit=1000&sort=unknown'))
+      const missing = await asUser(request(app).get('/jobs/missing'))
+
+      expect(invalid.status).toBe(400)
+      expect(invalid.body.errors.length).toBeGreaterThan(0)
+      expect(missing.status).toBe(404)
+      expect(missing.body).toEqual({ error: 'Job not found' })
+    })
+  })
   })
 
   describe('users and authorization', () => {
@@ -517,4 +553,3 @@ describe('HTTP API routers', () => {
       })
     })
   })
-})
