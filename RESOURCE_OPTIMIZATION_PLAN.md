@@ -204,31 +204,31 @@ Highest priority; likely to reduce repeated work without changing the transform 
 
 ### Phase 4 — Move filtering and pagination into MySQL; audit indexes
 
-- [ ] **BO4.1 — Replace `findJobs()` with a parameterized repository method.** Accept validated filters, sort direction, `limit`, and `offset` (or cursor). Apply these in SQL using parameterized values and a fixed allowlist for sort-column names.  
+- [x] **BO4.1 — Replace `findJobs()` with a parameterized repository method.** Accept validated filters, sort direction, `limit`, and `offset` (or cursor). Apply these in SQL using parameterized values and a fixed allowlist for sort-column names.  
   **Release type:** `feat(backend):` → **minor**  
   **Accept when:** `GET /api/jobs?limit=20&offset=0&sort=posted_at&sortDir=desc` pushes limit, offset, and sort into SQL; `SELECT *` no longer returns the whole table.  
   **Commit scope:** `feat(backend): push job filtering and pagination into SQL`
-- [ ] **BO4.2 — Implement placeholder category/skill/location/country filters.** Implement them as indexed joins only after expected behavior is covered by tests. Return a separate `COUNT(*)` or a `limit + 1` page when the API needs totals.  
+- [x] **BO4.2 — Implement placeholder category/skill/location/country filters.** Implement them as indexed joins only after expected behavior is covered by tests. Return a separate `COUNT(*)` or a `limit + 1` page when the API needs totals.  
   **Release type:** `feat(backend):` → **minor**  
   **Accept when:** category, skill, city, and country query parameters filter results at the database layer and are backed by tests.  
   **Commit scope:** `feat(backend): implement category/skill/location/country filters`
-- [ ] **BO4.3 — Select only required fields per endpoint.** Replace `SELECT *` with field-specific projections for each endpoint.  
+- [x] **BO4.3 — Select only required fields per endpoint.** Replace `SELECT *` with field-specific projections for each endpoint.  
   **Release type:** `refactor(backend):` → **no bump**  
   **Accept when:** API responses contain the same shape, but queries fetch fewer columns.  
   **Commit scope:** `refactor(backend): project required fields only`
-- [ ] **BO4.4 — Paginate and cap `listFetchRuns()`.** `listFetchRuns()` currently has unbounded result forms. Add limit/offset and a sensible cap.  
+- [x] **BO4.4 — Paginate and cap `listFetchRuns()`.** `listFetchRuns()` currently has unbounded result forms. Add limit/offset and a sensible cap.  
   **Release type:** `feat(backend):` → **minor**  
   **Accept when:** admin fetch-run history is bounded and paginated.  
   **Commit scope:** `feat(backend): paginate fetch-run history`
-- [ ] **BO4.5 — Audit indexes using query plans.** Use `EXPLAIN` on affected production queries to add only useful indexes. Verify the unique jobs key and existing indexes first. Candidate areas to measure: `fetch_runs(source_id, created_at)`, lookup columns used by auth/refresh tokens, and indexes on association foreign keys/filter columns. Do not add indexes blindly — each increases write and storage cost.  
+- [x] **BO4.5 — Audit indexes using query plans.** Use `EXPLAIN` on affected production queries to add only useful indexes. Verify the unique jobs key and existing indexes first. Candidate areas to measure: `fetch_runs(source_id, created_at)`, lookup columns used by auth/refresh tokens, and indexes on association foreign keys/filter columns. Do not add indexes blindly — each increases write and storage cost.  
   **Release type:** `perf(backend):` → **no bump**  
   **Accept when:** query plans show index usage for hot queries and no unnecessary indexes were added.  
   **Commit scope:** `perf(backend): add measured indexes`
-- [ ] **BO4.6 — Make pool limits configurable with a total budget.** Revisit pool sizing from observed concurrent queries. Make connection limits configurable and set a total budget across the API and fetcher processes, rather than assuming each process needs ten connections.  
+- [x] **BO4.6 — Make pool limits configurable with a total budget.** Revisit pool sizing from observed concurrent queries. Make connection limits configurable and set a total budget across the API and fetcher processes, rather than assuming each process needs ten connections.  
   **Release type:** `feat(backend):` → **minor**  
   **Accept when:** `DB_POOL_LIMIT` (or similar) is configurable and the combined API+fetcher pool budget is documented and below the previous 20-connection maximum.  
   **Commit scope:** `feat(backend): configurable pool budget across processes`
-- [ ] **BO4.7 — Validate query plans and API response compatibility.** Verify query plans and API response compatibility before rollout.  
+- [x] **BO4.7 — Validate query plans and API response compatibility.** Verify query plans and API response compatibility before rollout.  
   **Release type:** `test(backend):` → **no bump**  
   **Accept when:** staging run shows lower database reads, Node memory use, and CPU for the jobs list.  
   **Commit scope:** `test(backend): validate query plans and API compatibility`
@@ -241,23 +241,23 @@ Today there is no real boundary. `src/database/db.ts` imports only `mysql2/promi
 
 Changing databases later would require rewriting every SQL string in `JobRepository.ts` and `migrations.ts`, not swapping a config value. This phase introduces a proper boundary so a different driver can be swapped behind the same repository interface without touching application behavior.
 
-- [ ] **BO5.1 — Define a repository interface.** Extract an interface (or abstract class) from `JobRepository` covering all persistence operations (`upsertJob`, `syncJobSkills`, `syncJobCategories`, `syncLocations`, `findJobs`, `listFetchRuns`, `listSources`, `listSkills`, `listCategories`, `listCities`, `listCountries`, `createFetchRun`, `updateFetchRun`, etc.).  
+- [x] **BO5.1 — Define a repository interface.** Extract an interface (or abstract class) from `JobRepository` covering all persistence operations (`upsertJob`, `syncJobSkills`, `syncJobCategories`, `syncLocations`, `findJobs`, `listFetchRuns`, `listSources`, `listSkills`, `listCategories`, `listCities`, `listCountries`, `createFetchRun`, `updateFetchRun`, etc.).  
   **Release type:** `refactor(backend):` → **no bump**  
   **Accept when:** `JobRepository` implements a typed interface and every public repository method is declared on it.  
   **Commit scope:** `refactor(backend): define repository interface`
-- [ ] **BO5.2 — Decouple `JobRepository` from `mysql2/promise`.** `JobRepository` currently imports `query` and `execute` directly from `../database/db`. Introduce a driver-agnostic connection/query abstraction (e.g. an interface with `query(sql, params?)`, `execute(sql, params?)`, `transaction(fn)`) and inject it into `JobRepository` instead of importing mysql2 directly.  
+- [x] **BO5.2 — Decouple `JobRepository` from `mysql2/promise`.** `JobRepository` currently imports `query` and `execute` directly from `../database/db`. Introduce a driver-agnostic connection/query abstraction (e.g. an interface with `query(sql, params?)`, `execute(sql, params?)`, `transaction(fn)`) and inject it into `JobRepository` instead of importing mysql2 directly.  
   **Release type:** `refactor(backend):` → **no bump**  
   **Accept when:** `JobRepository` no longer imports `mysql2/promise`; it calls methods on an injected connection abstraction.  
   **Commit scope:** `refactor(backend): decouple repository from mysql2`
-- [ ] **BO5.3 — Move MySQL-specific SQL into a MySQL driver implementation.** All inline MySQL SQL in `JobRepository.ts` and `migrations.ts` (`ON DUPLICATE KEY UPDATE`, `ENUM` types, `information_schema` column checks, backtick identifiers) lives behind a MySQL driver that implements the connection/query abstraction.  
+- [x] **BO5.3 — Move MySQL-specific SQL into a MySQL driver implementation.** All inline MySQL SQL in `JobRepository.ts` and `migrations.ts` (`ON DUPLICATE KEY UPDATE`, `ENUM` types, `information_schema` column checks, backtick identifiers) lives behind a MySQL driver that implements the connection/query abstraction.  
   **Release type:** `refactor(backend):` → **no bump**  
   **Accept when:** no repository method or migration contains MySQL-dialect SQL directly; all such SQL is in the MySQL driver layer.  
   **Commit scope:** `refactor(backend): move MySQL SQL into MySQL driver`
-- [ ] **BO5.4 — Wire dependency injection at startup.** `src/daemon/index.ts:21` instantiates `new JobOrchestrator()` with no arguments, and `src/api/server.ts:31-48` creates `new JobRepository()` inline in each route handler. Wire DI so both services receive a `JobRepository` built with the configured driver (currently MySQL via `DB_DIALECT`). `DB_DIALECT` selects the driver implementation rather than being ignored — `src/config/index.ts:64` already defines `dbDialect` but `src/database/db.ts` never reads it and always creates a MySQL pool.  
+- [x] **BO5.4 — Wire dependency injection at startup.** `src/daemon/index.ts:21` instantiates `new JobOrchestrator()` with no arguments, and `src/api/server.ts:31-48` creates `new JobRepository()` inline in each route handler. Wire DI so both services receive a `JobRepository` built with the configured driver (currently MySQL via `DB_DIALECT`). `DB_DIALECT` selects the driver implementation rather than being ignored — `src/config/index.ts:64` already defines `dbDialect` but `src/database/db.ts` never reads it and always creates a MySQL pool.  
   **Release type:** `refactor(backend):` → **no bump**  
   **Accept when:** `DB_DIALECT` controls which driver is instantiated; the fetcher daemon and API server construct repositories without knowing the driver; no file instantiates `JobRepository` directly without an injected driver.  
   **Commit scope:** `refactor(backend): dependency-inject repository driver`
-- [ ] **BO5.5 — Add driver-swap tests.** Verify the repository test suite passes against the MySQL driver, and that the same tests can run against a fake/in-memory driver implementation to prove the boundary is real.  
+- [x] **BO5.5 — Add driver-swap tests.** Verify the repository test suite passes against the MySQL driver, and that the same tests can run against a fake/in-memory driver implementation to prove the boundary is real.  
   **Release type:** `test(backend):` → **no bump**  
   **Accept when:** repository tests pass against MySQL and against an in-memory driver stub; no test references mysql2-specific types.  
   **Commit scope:** `test(backend): verify repository interface with MySQL and in-memory drivers`

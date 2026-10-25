@@ -1,16 +1,32 @@
 import { RowDataPacket } from 'mysql2/promise'
-import { query, execute, transaction } from '../database/db'
+import type { IJobRepository } from './IJobRepository'
+import type { IDbDriver, IDbConnection, QueryResult } from '../database/IDbDriver'
 
-export class JobRepository {
+export class JobRepository implements IJobRepository {
+  constructor(private driver: IDbDriver) {}
+
+  private async query<T extends RowDataPacket[]>(sql: string, params?: unknown[]): Promise<T> {
+    const { rows } = await this.driver.query<T>(sql, params)
+    return rows
+  }
+
+  private async execute(sql: string, params?: unknown[]): Promise<any> {
+    return this.driver.execute(sql, params)
+  }
+
+  private async transaction<T>(fn: (conn: IDbConnection) => Promise<T>): Promise<T> {
+    return this.driver.transaction(fn)
+  }
+
   async getUserByEmail(email: string): Promise<any | null> {
-    const rows = await query<any>(`SELECT * FROM users WHERE email = ?`, [email])
+    const rows = await this.query<any>(`SELECT * FROM users WHERE email = ?`, [email])
     return rows.length ? rows[0] : null
   }
 
   async createUser(email: string, passwordHash: string, role: 'admin' | 'user' = 'user'): Promise<string> {
     const id = crypto.randomUUID()
     const now = new Date()
-    await execute(
+    await this.execute(
       `INSERT INTO users (id, email, password_hash, role, is_active, last_login_at, created_at, updated_at)
        VALUES (?, ?, ?, ?, 1, NULL, ?, ?)`,
       [id, email, passwordHash, role, now, now]
@@ -19,30 +35,30 @@ export class JobRepository {
   }
 
   async getUserById(id: string): Promise<any | null> {
-    const rows = await query<any>(`SELECT * FROM users WHERE id = ?`, [id])
+    const rows = await this.query<any>(`SELECT * FROM users WHERE id = ?`, [id])
     return rows.length ? rows[0] : null
   }
 
   async updateUserRole(id: string, role: 'admin' | 'user'): Promise<void> {
-    await execute(`UPDATE users SET role = ?, updated_at = ? WHERE id = ?`, [role, new Date(), id])
+    await this.execute(`UPDATE users SET role = ?, updated_at = ? WHERE id = ?`, [role, new Date(), id])
   }
 
   async deactivateUser(id: string): Promise<void> {
-    await execute(`UPDATE users SET is_active = 0, updated_at = ? WHERE id = ?`, [new Date(), id])
+    await this.execute(`UPDATE users SET is_active = 0, updated_at = ? WHERE id = ?`, [new Date(), id])
   }
 
   async updateUserLastLogin(id: string): Promise<void> {
-    await execute(`UPDATE users SET last_login_at = ?, updated_at = ? WHERE id = ?`, [new Date(), new Date(), id])
+    await this.execute(`UPDATE users SET last_login_at = ?, updated_at = ? WHERE id = ?`, [new Date(), new Date(), id])
   }
 
   async listUsers(): Promise<any[]> {
-    return query<any>(`SELECT id, email, role, is_active, last_login_at, created_at FROM users ORDER BY created_at DESC`)
+    return this.query<any>(`SELECT id, email, role, is_active, last_login_at, created_at FROM users ORDER BY created_at DESC`)
   }
 
   async createRefreshToken(userId: string, tokenHash: string, expiresAt: Date): Promise<void> {
     const id = crypto.randomUUID()
     const now = new Date()
-    await execute(
+    await this.execute(
       `INSERT INTO refresh_tokens (id, user_id, token_hash, expires_at, revoked_at, created_at)
        VALUES (?, ?, ?, ?, NULL, ?)`,
       [id, userId, tokenHash, expiresAt, now]
@@ -50,7 +66,7 @@ export class JobRepository {
   }
 
   async getRefreshTokenByUser(userId: string): Promise<any | null> {
-    const rows = await query<any>(
+    const rows = await this.query<any>(
       `SELECT * FROM refresh_tokens WHERE user_id = ? AND revoked_at IS NULL AND expires_at > NOW() ORDER BY created_at DESC LIMIT 1`,
       [userId]
     )
@@ -58,11 +74,11 @@ export class JobRepository {
   }
 
   async revokeRefreshToken(tokenId: string): Promise<void> {
-    await execute(`UPDATE refresh_tokens SET revoked_at = ? WHERE id = ?`, [new Date(), tokenId])
+    await this.execute(`UPDATE refresh_tokens SET revoked_at = ? WHERE id = ?`, [new Date(), tokenId])
   }
 
   async findJobs(): Promise<any[]> {
-    return query<any>(`SELECT * FROM jobs ORDER BY posted_at DESC, date_posted DESC`)
+    return this.query<any>(`SELECT * FROM jobs ORDER BY posted_at DESC, date_posted DESC`)
   }
 
   async findJobsWithFilters(params: {
@@ -189,7 +205,7 @@ export class JobRepository {
 
     // Count total (for pagination metadata)
     const countSql = `SELECT COUNT(*) as total FROM jobs j ${whereSql}`
-    const countRows = await query<Array<{ total: number } & RowDataPacket>>(countSql, params_)
+    const countRows = await this.query<Array<{ total: number } & RowDataPacket>>(countSql, params_)
     const total = countRows[0]?.total ?? 0
 
     // Fields to select for list view (exclude large/internal fields: description_text, raw_data, content_hash)
@@ -220,7 +236,7 @@ export class JobRepository {
       LIMIT ? OFFSET ?
     `
     const dataParams = [...params_, limit, offset]
-    const jobs = await query<any>(dataSql, dataParams)
+    const jobs = await this.query<any>(dataSql, dataParams)
 
     return { jobs, total }
   }
@@ -229,7 +245,7 @@ export class JobRepository {
     if (categoryIds.length === 0) return []
 
     const placeholders = categoryIds.map(() => '?').join(', ')
-    const rows = await query<Array<{ job_id: string } & RowDataPacket>>(
+    const rows = await this.query<Array<{ job_id: string } & RowDataPacket>>(
       `SELECT DISTINCT job_id FROM job_categories WHERE category_id IN (${placeholders})`,
       categoryIds,
     )
@@ -237,40 +253,40 @@ export class JobRepository {
   }
 
   async getJobDetails(jobId: string): Promise<any | null> {
-    const rows = await query<any>(`SELECT * FROM jobs WHERE id = ?`, [jobId])
+    const rows = await this.query<any>(`SELECT * FROM jobs WHERE id = ?`, [jobId])
     return rows.length ? rows[0] : null
   }
 
   async listSources(): Promise<any[]> {
-    return query<any>(`SELECT * FROM sources ORDER BY name ASC`)
+    return this.query<any>(`SELECT * FROM sources ORDER BY name ASC`)
   }
 
   async listFetchRuns(sourceId?: string, limit?: number, offset?: number): Promise<any[]> {
     const safeLimit = Math.min(limit ?? 50, 100)
     const safeOffset = offset ?? 0
     if (sourceId) {
-      return query<any>(`SELECT * FROM fetch_runs WHERE source_id = ? ORDER BY created_at DESC LIMIT ? OFFSET ?`, [sourceId, safeLimit, safeOffset])
+      return this.query<any>(`SELECT * FROM fetch_runs WHERE source_id = ? ORDER BY created_at DESC LIMIT ? OFFSET ?`, [sourceId, safeLimit, safeOffset])
     }
-    return query<any>(`SELECT * FROM fetch_runs ORDER BY created_at DESC LIMIT ? OFFSET ?`, [safeLimit, safeOffset])
+    return this.query<any>(`SELECT * FROM fetch_runs ORDER BY created_at DESC LIMIT ? OFFSET ?`, [safeLimit, safeOffset])
   }
 
   async listCountries(): Promise<any[]> {
-    return query<any>(`SELECT * FROM countries ORDER BY name ASC`)
+    return this.query<any>(`SELECT * FROM countries ORDER BY name ASC`)
   }
 
   async listCities(countryId?: string): Promise<any[]> {
     if (countryId) {
-      return query<any>(`SELECT * FROM cities WHERE country_id = ? ORDER BY name ASC`, [countryId])
+      return this.query<any>(`SELECT * FROM cities WHERE country_id = ? ORDER BY name ASC`, [countryId])
     }
-    return query<any>(`SELECT * FROM cities ORDER BY name ASC`)
+    return this.query<any>(`SELECT * FROM cities ORDER BY name ASC`)
   }
 
   async listCategories(): Promise<any[]> {
-    return query<any>(`SELECT * FROM categories ORDER BY name ASC`)
+    return this.query<any>(`SELECT * FROM categories ORDER BY name ASC`)
   }
 
   async listSkills(): Promise<any[]> {
-    return query<any>(`SELECT * FROM skills ORDER BY name ASC`)
+    return this.query<any>(`SELECT * FROM skills ORDER BY name ASC`)
   }
 
   async getMasterSchema(): Promise<any> {
@@ -279,7 +295,7 @@ export class JobRepository {
       this.listCities(),
       this.listSkills(),
       this.listCategories(),
-      query<any>(`SELECT * FROM geographic_areas ORDER BY name ASC`),
+      this.query<any>(`SELECT * FROM geographic_areas ORDER BY name ASC`),
     ])
     return { countries, cities, skills, categories, geographic_areas: areas }
   }
@@ -297,7 +313,7 @@ export class JobRepository {
   }): Promise<string> {
     const id = crypto.randomUUID()
     const now = new Date()
-    await execute(
+    await this.execute(
       `INSERT INTO fetch_runs (id, source_id, status, started_at, finished_at, jobs_found, jobs_saved_new, jobs_saved_updated, error_message, metadata, warnings, created_at, updated_at)
        VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
@@ -371,7 +387,7 @@ export class JobRepository {
     params.push(new Date())
     params.push(data.id)
 
-    await execute(`UPDATE fetch_runs SET ${fields.join(', ')} WHERE id = ?`, params)
+    await this.execute(`UPDATE fetch_runs SET ${fields.join(', ')} WHERE id = ?`, params)
   }
 
   async listSourceGeographicAreas(): Promise<Array<{
@@ -381,7 +397,7 @@ export class JobRepository {
     area_name: string
     area_definition: Record<string, unknown>
   }>> {
-    return query<any>(`
+    return this.query<any>(`
       SELECT sga.source_id, s.name AS source_name,
              sga.geographic_area_id, ga.name AS area_name, ga.definition AS area_definition
       FROM source_geographic_areas sga
@@ -392,14 +408,14 @@ export class JobRepository {
   }
 
   async updateSourceTimestamps(sourceId: string, lastRunAt: Date, nextRunAt: Date | null): Promise<void> {
-    await execute(
+    await this.execute(
       `UPDATE sources SET last_run_at = ?, next_run_at = ?, updated_at = ? WHERE id = ?`,
       [lastRunAt, nextRunAt, new Date(), sourceId]
     )
   }
 
   async updateSourceGeoAreaTimestamps(sourceId: string, areaId: string, lastRunAt: Date, nextRunAt: Date | null): Promise<void> {
-    await execute(
+    await this.execute(
       `UPDATE source_geographic_areas SET last_run_at = ?, next_run_at = ?, updated_at = ? WHERE source_id = ? AND geographic_area_id = ?`,
       [lastRunAt, nextRunAt, new Date(), sourceId, areaId]
     )
@@ -416,7 +432,7 @@ export class JobRepository {
     const now = new Date()
     const enabled = data.enabled ?? 1
     const working_mode = data.working_mode ?? 'both'
-    await execute(
+    await this.execute(
       `INSERT INTO sources (id, name, type, working_mode, config, enabled, last_run_at, next_run_at, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?)
        ON DUPLICATE KEY UPDATE name = VALUES(name), type = VALUES(type), working_mode = VALUES(working_mode), config = VALUES(config), enabled = VALUES(enabled), updated_at = VALUES(updated_at)`,
@@ -425,7 +441,7 @@ export class JobRepository {
   }
 
   async deleteSource(id: string): Promise<void> {
-    await execute(`DELETE FROM sources WHERE id = ?`, [id])
+    await this.execute(`DELETE FROM sources WHERE id = ?`, [id])
   }
 
   async upsertJob(data: {
@@ -448,7 +464,7 @@ export class JobRepository {
     content_hash?: string | null
   }): Promise<{ id: string; isNew: boolean }> {
     const now = new Date()
-    const existing = await query<any>(
+    const existing = await this.query<any>(
       `SELECT id, content_hash FROM jobs WHERE source_id = ? AND external_id = ?`,
       [data.source_id, data.external_id]
     )
@@ -482,7 +498,7 @@ export class JobRepository {
         return { id: existing[0].id, isNew: false }
       }
 
-      await execute(
+      await this.execute(
         `UPDATE jobs
          SET title = ?, organization = ?, job_url = ?, description_text = ?,
              allow_remote = ?, salary_min = ?, salary_max = ?, salary_currency = ?,
@@ -500,7 +516,7 @@ export class JobRepository {
       return { id: existing[0].id, isNew: false }
     }
 
-    await execute(
+    await this.execute(
       `INSERT INTO jobs (id, source_id, external_id, title, organization, job_url, description_text,
          allow_remote, salary_min, salary_max, salary_currency, salary_unit, date_posted, posted_at,
          raw_data, fetched_at, content_hash, created_at, updated_at)
@@ -548,7 +564,7 @@ export class JobRepository {
     // Pre-fetch existing jobs for this batch
     const externalIds = data.map((d) => d.external_id)
     const placeholders = externalIds.map(() => '?').join(', ')
-    const existing = await query<any>(
+    const existing = await this.query<any>(
       `SELECT id, source_id, external_id, content_hash FROM jobs WHERE source_id = ? AND external_id IN (${placeholders})`,
       [data[0].source_id, ...externalIds]
     )
@@ -613,7 +629,7 @@ export class JobRepository {
     if (toInsert.length > 0) {
       const valuePlaceholders = toInsert.map(() => '(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').join(', ')
       const flatParams = toInsert.flat()
-      await execute(
+      await this.execute(
         `INSERT INTO jobs (id, source_id, external_id, title, organization, job_url, description_text,
            allow_remote, salary_min, salary_max, salary_currency, salary_unit, date_posted, posted_at,
            raw_data, fetched_at, content_hash, created_at, updated_at)
@@ -624,7 +640,7 @@ export class JobRepository {
 
     // Update changed jobs
     for (const upd of toUpdate) {
-      await execute(
+      await this.execute(
         `UPDATE jobs
          SET title = ?, organization = ?, job_url = ?, description_text = ?,
              allow_remote = ?, salary_min = ?, salary_max = ?, salary_currency = ?,
@@ -639,29 +655,29 @@ export class JobRepository {
   }
 
   async syncJobSkills(jobId: string, skillIds: string[]): Promise<void> {
-    await execute(`DELETE FROM job_skills WHERE job_id = ?`, [jobId])
+    await this.execute(`DELETE FROM job_skills WHERE job_id = ?`, [jobId])
     if (skillIds.length === 0) return
     const values = skillIds.map(() => '(?, ?)').join(', ')
     const flatParams: unknown[] = []
     for (const skillId of skillIds) {
       flatParams.push(jobId, skillId)
     }
-    await execute(`INSERT INTO job_skills (job_id, skill_id) VALUES ${values}`, flatParams)
+    await this.execute(`INSERT INTO job_skills (job_id, skill_id) VALUES ${values}`, flatParams)
   }
 
   async syncJobCategories(jobId: string, categoryPairs: Array<{ category_id: string; classification_confidence?: number | null }>): Promise<void> {
-    await execute(`DELETE FROM job_categories WHERE job_id = ?`, [jobId])
+    await this.execute(`DELETE FROM job_categories WHERE job_id = ?`, [jobId])
     if (categoryPairs.length === 0) return
     const values = categoryPairs.map(() => '(?, ?, ?)').join(', ')
     const flatParams: unknown[] = []
     for (const p of categoryPairs) {
       flatParams.push(jobId, p.category_id, p.classification_confidence ?? null)
     }
-    await execute(`INSERT INTO job_categories (job_id, category_id, classification_confidence) VALUES ${values}`, flatParams)
+    await this.execute(`INSERT INTO job_categories (job_id, category_id, classification_confidence) VALUES ${values}`, flatParams)
   }
 
   async syncLocations(jobId: string, locations: Array<{ city_id?: string | null; raw_text?: string | null }>): Promise<void> {
-    await execute(`DELETE FROM locations WHERE job_id = ?`, [jobId])
+    await this.execute(`DELETE FROM locations WHERE job_id = ?`, [jobId])
     if (locations.length === 0) return
     const values = locations.map(() => '(?, ?, ?, ?, ?, ?)').join(', ')
     const flatParams: unknown[] = []
@@ -669,7 +685,7 @@ export class JobRepository {
     for (const loc of locations) {
       flatParams.push(crypto.randomUUID(), jobId, loc.city_id ?? null, loc.raw_text ?? null, now, now)
     }
-    await execute(`INSERT INTO locations (id, job_id, city_id, raw_text, created_at, updated_at) VALUES ${values}`, flatParams)
+    await this.execute(`INSERT INTO locations (id, job_id, city_id, raw_text, created_at, updated_at) VALUES ${values}`, flatParams)
   }
 
   async syncJobSkillsBatch(jobId: string, skillIds: string[]): Promise<void> {
@@ -685,26 +701,26 @@ export class JobRepository {
   }
 
   async getJobWithDetails(jobId: string): Promise<any | null> {
-    const rows = await query<any>(`SELECT * FROM jobs WHERE id = ?`, [jobId])
+    const rows = await this.query<any>(`SELECT * FROM jobs WHERE id = ?`, [jobId])
     if (!rows.length) return null
     const job = rows[0]
 
     const [skills, categories, locations] = await Promise.all([
-      query<any>(`
+      this.query<any>(`
         SELECT s.id, s.name, s.slug
         FROM job_skills js
         JOIN skills s ON s.id = js.skill_id
         WHERE js.job_id = ?
         ORDER BY s.name ASC
       `, [jobId]),
-      query<any>(`
+      this.query<any>(`
         SELECT jc.category_id, jc.classification_confidence, c.name, c.slug
         FROM job_categories jc
         JOIN categories c ON c.id = jc.category_id
         WHERE jc.job_id = ?
         ORDER BY c.name ASC
       `, [jobId]),
-      query<any>(`
+      this.query<any>(`
         SELECT l.id, l.city_id, l.raw_text, c.name AS city_name, co.id AS country_id, co.name AS country_name
         FROM locations l
         LEFT JOIN cities c ON c.id = l.city_id
@@ -732,7 +748,7 @@ export class JobRepository {
 
   async upsertSkill(data: { id: string; name: string; slug: string }): Promise<void> {
     const now = new Date()
-    await execute(
+    await this.execute(
       `INSERT INTO skills (id, name, slug, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?)
        ON DUPLICATE KEY UPDATE name = VALUES(name), slug = VALUES(slug), updated_at = VALUES(updated_at)`,
@@ -742,7 +758,7 @@ export class JobRepository {
 
   async upsertCategory(data: { id: string; name: string; slug: string; description?: string | null }): Promise<void> {
     const now = new Date()
-    await execute(
+    await this.execute(
       `INSERT INTO categories (id, name, slug, description, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, ?)
        ON DUPLICATE KEY UPDATE name = VALUES(name), slug = VALUES(slug), description = VALUES(description), updated_at = VALUES(updated_at)`,
@@ -752,7 +768,7 @@ export class JobRepository {
 
   async upsertCountry(data: { id: string; name: string; code?: string | null }): Promise<void> {
     const now = new Date()
-    await execute(
+    await this.execute(
       `INSERT INTO countries (id, name, code, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?)
        ON DUPLICATE KEY UPDATE name = VALUES(name), code = VALUES(code), updated_at = VALUES(updated_at)`,
@@ -762,7 +778,7 @@ export class JobRepository {
 
   async upsertCity(data: { id: string; country_id: string; name: string }): Promise<void> {
     const now = new Date()
-    await execute(
+    await this.execute(
       `INSERT INTO cities (id, country_id, name, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?)
        ON DUPLICATE KEY UPDATE country_id = VALUES(country_id), name = VALUES(name), updated_at = VALUES(updated_at)`,
@@ -778,7 +794,7 @@ export class JobRepository {
     for (const d of data) {
       flatParams.push(d.id, d.name, d.slug, now, now)
     }
-    await execute(
+    await this.execute(
       `INSERT INTO skills (id, name, slug, created_at, updated_at) VALUES ${values}
        ON DUPLICATE KEY UPDATE name = VALUES(name), slug = VALUES(slug), updated_at = VALUES(updated_at)`,
       flatParams
@@ -793,7 +809,7 @@ export class JobRepository {
     for (const d of data) {
       flatParams.push(d.id, d.name, d.slug, d.description ?? null, now, now)
     }
-    await execute(
+    await this.execute(
       `INSERT INTO categories (id, name, slug, description, created_at, updated_at) VALUES ${values}
        ON DUPLICATE KEY UPDATE name = VALUES(name), slug = VALUES(slug), description = VALUES(description), updated_at = VALUES(updated_at)`,
       flatParams
@@ -808,7 +824,7 @@ export class JobRepository {
     for (const d of data) {
       flatParams.push(d.id, d.name, d.code ?? null, now, now)
     }
-    await execute(
+    await this.execute(
       `INSERT INTO countries (id, name, code, created_at, updated_at) VALUES ${values}
        ON DUPLICATE KEY UPDATE name = VALUES(name), code = VALUES(code), updated_at = VALUES(updated_at)`,
       flatParams
@@ -823,7 +839,7 @@ export class JobRepository {
     for (const d of data) {
       flatParams.push(d.id, d.country_id, d.name, now, now)
     }
-    await execute(
+    await this.execute(
       `INSERT INTO cities (id, country_id, name, created_at, updated_at) VALUES ${values}
        ON DUPLICATE KEY UPDATE country_id = VALUES(country_id), name = VALUES(name), updated_at = VALUES(updated_at)`,
       flatParams
@@ -838,7 +854,7 @@ export class JobRepository {
   }): Promise<void> {
     const now = new Date()
     const enabled = data.enabled ?? 1
-    await execute(
+    await this.execute(
       `INSERT INTO geographic_areas (id, name, definition, enabled, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, ?)
        ON DUPLICATE KEY UPDATE name = VALUES(name), definition = VALUES(definition), enabled = VALUES(enabled), updated_at = VALUES(updated_at)`,
@@ -853,7 +869,7 @@ export class JobRepository {
   }): Promise<void> {
     const now = new Date()
     const enabled = data.enabled ?? 1
-    await execute(
+    await this.execute(
       `INSERT INTO source_geographic_areas (source_id, geographic_area_id, enabled, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?)
        ON DUPLICATE KEY UPDATE enabled = VALUES(enabled), updated_at = VALUES(updated_at)`,
@@ -862,33 +878,33 @@ export class JobRepository {
   }
 
   async unlinkSourceGeographicArea(sourceId: string, geographicAreaId: string): Promise<void> {
-    await execute(
+    await this.execute(
       `DELETE FROM source_geographic_areas WHERE source_id = ? AND geographic_area_id = ?`,
       [sourceId, geographicAreaId]
     )
   }
 
   async getSource(id: string): Promise<any | null> {
-    const rows = await query<any>(`SELECT * FROM sources WHERE id = ?`, [id])
+    const rows = await this.query<any>(`SELECT * FROM sources WHERE id = ?`, [id])
     return rows.length ? rows[0] : null
   }
 
   async listGeographicAreas(): Promise<any[]> {
-    return query<any>(`SELECT * FROM geographic_areas ORDER BY name ASC`)
+    return this.query<any>(`SELECT * FROM geographic_areas ORDER BY name ASC`)
   }
 
   async getGeographicArea(id: string): Promise<any | null> {
-    const rows = await query<any>(`SELECT * FROM geographic_areas WHERE id = ?`, [id])
+    const rows = await this.query<any>(`SELECT * FROM geographic_areas WHERE id = ?`, [id])
     return rows.length ? rows[0] : null
   }
 
   async deleteGeographicArea(id: string): Promise<void> {
-    await execute(`DELETE FROM geographic_areas WHERE id = ?`, [id])
+    await this.execute(`DELETE FROM geographic_areas WHERE id = ?`, [id])
   }
 
   async listSourceAreas(sourceId?: string): Promise<any[]> {
     if (sourceId) {
-      return query<any>(`
+      return this.query<any>(`
         SELECT sga.source_id, s.name AS source_name,
                sga.geographic_area_id, ga.name AS area_name, ga.definition AS area_definition,
                sga.enabled, sga.last_run_at, sga.next_run_at
@@ -899,7 +915,7 @@ export class JobRepository {
         ORDER BY ga.name ASC
       `, [sourceId])
     }
-    return query<any>(`
+    return this.query<any>(`
       SELECT sga.source_id, s.name AS source_name,
              sga.geographic_area_id, ga.name AS area_name, ga.definition AS area_definition,
              sga.enabled, sga.last_run_at, sga.next_run_at
@@ -912,7 +928,7 @@ export class JobRepository {
 
   // ── User interests (categories) ──
   async listUserCategories(userId: string): Promise<any[]> {
-    return query<any>(`
+    return this.query<any>(`
       SELECT c.id, c.name, c.slug, c.description, uc.enabled, uc.created_at
       FROM user_categories uc
       JOIN categories c ON c.id = uc.category_id
@@ -923,7 +939,7 @@ export class JobRepository {
 
   async createUserCategory(userId: string, categoryId: string): Promise<void> {
     const now = new Date()
-    await execute(
+    await this.execute(
       `INSERT INTO user_categories (user_id, category_id, enabled, created_at, updated_at)
        VALUES (?, ?, 1, ?, ?)
        ON DUPLICATE KEY UPDATE enabled = VALUES(enabled), updated_at = VALUES(updated_at)`,
@@ -932,7 +948,7 @@ export class JobRepository {
   }
 
   async deleteUserCategory(userId: string, categoryId: string): Promise<void> {
-    await execute(
+    await this.execute(
       `DELETE FROM user_categories WHERE user_id = ? AND category_id = ?`,
       [userId, categoryId]
     )
@@ -941,13 +957,13 @@ export class JobRepository {
   // ── Keywords ──
   async listKeywords(enabledOnly?: boolean): Promise<any[]> {
     const where = enabledOnly ? 'WHERE enabled = 1' : ''
-    return query<any>(`SELECT * FROM keywords ${where} ORDER BY name ASC`)
+    return this.query<any>(`SELECT * FROM keywords ${where} ORDER BY name ASC`)
   }
 
   async upsertKeyword(data: { id: string; name: string; slug: string; category_id?: string | null; enabled?: boolean }): Promise<void> {
     const now = new Date()
     const enabled = data.enabled ?? 1
-    await execute(
+    await this.execute(
       `INSERT INTO keywords (id, name, slug, category_id, enabled, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, ?, ?)
        ON DUPLICATE KEY UPDATE name = VALUES(name), slug = VALUES(slug),
@@ -957,12 +973,12 @@ export class JobRepository {
   }
 
   async deleteKeyword(id: string): Promise<void> {
-    await execute(`DELETE FROM keywords WHERE id = ?`, [id])
+    await this.execute(`DELETE FROM keywords WHERE id = ?`, [id])
   }
 
   // ── Category ↔ Keyword links ──
   async listCategoryKeywords(categoryId: string): Promise<any[]> {
-    return query<any>(`
+    return this.query<any>(`
       SELECT k.id, k.name, k.slug, ck.weight, ck.enabled
       FROM category_keywords ck
       JOIN keywords k ON k.id = ck.keyword_id
@@ -980,7 +996,7 @@ export class JobRepository {
     const now = new Date()
     const weight = data.weight ?? null
     const enabled = data.enabled ?? 1
-    await execute(
+    await this.execute(
       `INSERT INTO category_keywords (category_id, keyword_id, weight, enabled, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, ?)
        ON DUPLICATE KEY UPDATE weight = VALUES(weight), enabled = VALUES(enabled), updated_at = VALUES(updated_at)`,
@@ -989,7 +1005,7 @@ export class JobRepository {
   }
 
   async deleteCategoryKeyword(categoryId: string, keywordId: string): Promise<void> {
-    await execute(
+    await this.execute(
       `DELETE FROM category_keywords WHERE category_id = ? AND keyword_id = ?`,
       [categoryId, keywordId]
     )
@@ -997,7 +1013,7 @@ export class JobRepository {
 
   // ── Unified keyword resolution for proactive fetch ──
   async listActiveUnifiedKeywords(): Promise<string[]> {
-    const rows = await query<any>(`
+    const rows = await this.query<any>(`
       SELECT DISTINCT k.name AS keyword
       FROM user_categories uc
       JOIN category_keywords ck ON ck.category_id = uc.category_id
@@ -1019,7 +1035,7 @@ export class JobRepository {
     let lastError: unknown = null
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
       try {
-        return await transaction(async (conn) => {
+        return await this.transaction(async (conn) => {
           return fn(conn)
         })
       } catch (err: any) {

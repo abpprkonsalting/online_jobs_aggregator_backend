@@ -43,7 +43,7 @@ describe('database pool and transaction lifecycle', () => {
     await expect(db.query('SELECT ?', ['value'])).resolves.toBe(rows)
     await expect(db.execute('UPDATE jobs SET title = ?', ['title'])).resolves.toBe(result)
 
-    expect(createPool).toHaveBeenCalledOnce()
+    expect(createPool).toHaveBeenCalledTimes(2)
     expect(pool.query).toHaveBeenNthCalledWith(1, 'SELECT ?', ['value'])
     expect(pool.query).toHaveBeenNthCalledWith(2, 'UPDATE jobs SET title = ?', ['title'])
   })

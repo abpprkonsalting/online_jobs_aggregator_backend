@@ -1,4 +1,5 @@
-import { JobRepository } from '../persistence/JobRepository'
+import { IJobRepository } from '../persistence/IJobRepository'
+import { createJobRepository } from '../database/db'
 import { logger } from '../utils/logger'
 import { getConfig } from '../config'
 import { createRateLimiter } from '../utils/rate-limiter'
@@ -31,7 +32,7 @@ interface BackoffState {
 }
 
 export class JobOrchestrator {
-  private repo: JobRepository
+  private repo: IJobRepository
   private config = getConfig()
   private runningCycles = new Map<string, { key: string; sourceId: string; areaId: string; promise: Promise<void> }>()
   private stop$ = false
@@ -42,8 +43,8 @@ export class JobOrchestrator {
   private backoff = new Map<string, BackoffState>()
   private rrIndex = 0
 
-  constructor(repo?: JobRepository) {
-    this.repo = repo ?? new JobRepository()
+  constructor(repo?: IJobRepository) {
+    this.repo = repo ?? createJobRepository()
   }
 
   async start(): Promise<void> {

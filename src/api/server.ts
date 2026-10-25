@@ -9,7 +9,7 @@ import versionRoutes from './version'
 import { requireAuthStrict, requireRole } from '../middleware/auth'
 import { ensureDatabase, seedAdminUser } from '../database/migrations'
 import { getConfig } from '../config'
-import JobRepository from '../persistence/JobRepository'
+import { createJobRepository } from '../database/db'
 import { logger } from '../utils/logger'
 import { versionLogFields } from '../utils/version'
 
@@ -26,24 +26,22 @@ async function start() {
   await ensureDatabase()
   await seedAdminUser(config.adminEmail, config.adminPassword, 'admin')
 
+  const repo = createJobRepository()
+
   const skillsRouter = express.Router()
   skillsRouter.get('/', async (_req, res) => {
-    const repo = new JobRepository()
     res.json(await repo.listSkills())
   })
   const citiesRouter = express.Router()
   citiesRouter.get('/', async (_req, res) => {
-    const repo = new JobRepository()
     res.json(await repo.listCities())
   })
   const countriesRouter = express.Router()
   countriesRouter.get('/', async (_req, res) => {
-    const repo = new JobRepository()
     res.json(await repo.listCountries())
   })
   const categoriesRouter = express.Router()
   categoriesRouter.get('/', async (_req, res) => {
-    const repo = new JobRepository()
     res.json(await repo.listCategories())
   })
 

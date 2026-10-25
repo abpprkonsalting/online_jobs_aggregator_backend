@@ -1,7 +1,11 @@
 import { createPool, type Pool, type PoolConnection, type RowDataPacket, type ResultSetHeader } from 'mysql2/promise'
 import { getConfig } from '../config'
+import type { IDbDriver } from './IDbDriver'
+import { MySqlDriver } from './MySqlDriver'
+import { JobRepository } from '../persistence/JobRepository'
 
 let pool: Pool | null = null
+let driver: IDbDriver | null = null
 
 export function getPool(): Pool {
   if (!pool) {
@@ -19,29 +23,25 @@ export function getPool(): Pool {
   return pool as Pool
 }
 
+export function getDriver(): IDbDriver {
+  if (!driver) {
+    const config = getConfig()
+    driver = new MySqlDriver(config.databaseUrl, config.dbPoolLimit)
+  }
+  return driver
+}
+
 export async function query<T extends RowDataPacket[]>(sql: string, params?: unknown[]): Promise<T> {
-  const [rows] = await getPool().query<T>(sql, params)
+  const { rows } = await getDriver().query<T>(sql, params)
   return rows
 }
 
 export async function execute(sql: string, params?: unknown[]): Promise<ResultSetHeader> {
-  const [result] = await getPool().query<ResultSetHeader>(sql, params)
-  return result as ResultSetHeader
+  return getDriver().execute(sql, params)
 }
 
-export async function transaction<T>(fn: (conn: PoolConnection) => Promise<T>): Promise<T> {
-  const conn = await getPool().getConnection()
-  try {
-    await conn.beginTransaction()
-    const result = await fn(conn)
-    await conn.commit()
-    return result
-  } catch (e) {
-    await conn.rollback()
-    throw e
-  } finally {
-    conn.release()
-  }
+export async function transaction<T>(fn: (conn: any) => Promise<T>): Promise<T> {
+  return getDriver().transaction(fn)
 }
 
 export async function closePool(): Promise<void> {
@@ -49,4 +49,12 @@ export async function closePool(): Promise<void> {
     await pool.end()
     pool = null
   }
+  if (driver) {
+    await driver.close()
+    driver = null
+  }
+}
+
+export function createJobRepository(): JobRepository {
+  return new JobRepository(getDriver())
 }

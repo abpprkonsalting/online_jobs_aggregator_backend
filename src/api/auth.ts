@@ -2,11 +2,11 @@ import { Router, Request, Response } from 'express'
 import { body, validationResult } from 'express-validator'
 import { AuthRequest, requireAuthStrict } from '../middleware/auth'
 import { signAccessToken, signRefreshToken, verifyToken, verifyTokenHash, hashToken, hashPassword, verifyPassword } from '../utils/auth'
-import { JobRepository } from '../persistence/JobRepository'
+import { createJobRepository } from '../database/db'
 import { getConfig } from '../config'
 
 const router = Router()
-const repo = new JobRepository()
+const repo = createJobRepository()
 const config = getConfig()
 
 function validate(req: Request, res: Response): boolean {
