@@ -1,6 +1,7 @@
 import { JobRepository } from '../persistence/JobRepository'
 import { EntityResolver } from './resolver'
 import type { TransformConfig, TransformResult } from './types'
+import crypto from 'crypto'
 
 interface TransformFieldMapping {
   source: string
@@ -55,6 +56,29 @@ function asRecord(item: unknown): Record<string, unknown> {
   return {}
 }
 
+function computeContentHash(jobData: Record<string, unknown>): string {
+  const stableFields = [
+    'title',
+    'organization',
+    'job_url',
+    'description_text',
+    'salary_min',
+    'salary_max',
+    'salary_currency',
+    'salary_unit',
+    'date_posted',
+    'allow_remote',
+  ]
+  const hashInput = stableFields.map((f) => String(jobData[f] ?? '')).join('|')
+  return crypto.createHash('sha256').update(hashInput).digest('hex')
+}
+
+interface UpsertBatchResult {
+  jobsNew: number
+  jobsUpdated: number
+  jobIds: Map<string, string> // external_id -> job id
+}
+
 export class TransformEngine {
   private repo: JobRepository
   private config: TransformConfig
@@ -76,6 +100,13 @@ export class TransformEngine {
     let jobsSavedUpdated = 0
     const warnings: string[] = []
     const allEntities: Array<{ entity: string; table: string; matchBy: Record<string, unknown>; data: Record<string, unknown> }> = []
+
+    // Prepare job records for batch processing
+    const jobRecords: Array<{
+      record: Record<string, unknown>
+      rawJob: unknown
+      contentHash: string
+    }> = []
 
     for (const rawJob of rawJobs) {
       if (!rawJob || typeof rawJob !== 'object') continue
@@ -119,15 +150,12 @@ export class TransformEngine {
         continue
       }
 
-      // 2. Upsert job
-      const upsertResult = await this.repo.upsertJob(jobRecord as any)
-      if (upsertResult.isNew) jobsSavedNew++
-      else jobsSavedUpdated++
+      // Compute content hash for no-op detection
+      const contentHash = computeContentHash(jobRecord)
 
-      const actualJobId = upsertResult.id
-      jobRecord.id = actualJobId
+      jobRecords.push({ record: jobRecord, rawJob, contentHash })
 
-      // 3. Process child entities
+      // Collect child entities for later batch resolution
       const childEntities = ['job_skills', 'job_categories', 'locations']
       for (const childName of childEntities) {
         const childConfig = this.config.entities[childName]
@@ -146,35 +174,33 @@ export class TransformEngine {
 
           if (childName === 'job_skills') {
             const skillName = String(resolvedValue)
-            const skillId = await this.resolver.resolveSkill(skillName)
-            if (!skillId) continue
+            this.resolver.queueSkill(skillName)
             rows.push({
               table: childConfig.table,
-              matchBy: { job_id: actualJobId, skill_id: skillId },
-              data: { job_id: actualJobId, skill_id: skillId },
+              matchBy: { skill_name: skillName },
+              data: { skill_name: skillName },
             })
           } else if (childName === 'job_categories') {
             const categoryName = String(resolvedValue)
-            const categoryId = await this.resolver.resolveCategory(categoryName)
-            if (!categoryId) continue
-            if (rows.some((row) => row.matchBy.category_id === categoryId)) continue
+            if (rows.some((row) => row.matchBy.category_name === categoryName)) continue
+            this.resolver.queueCategory(categoryName)
             rows.push({
               table: childConfig.table,
-              matchBy: { job_id: actualJobId, category_id: categoryId },
+              matchBy: { category_name: categoryName },
               data: {
-                job_id: actualJobId,
-                category_id: categoryId,
+                category_name: categoryName,
                 classification_confidence: childData.classification_confidence ?? null,
               },
             })
           } else if (childName === 'locations') {
             const rawText = String(childData.raw_text ?? resolvedValue)
-            const cityId = await this.resolver.resolveCity(rawText)
-            if (rows.some((row) => row.data.city_id === (cityId ?? null) && row.data.raw_text === rawText)) continue
+            if (rows.some((row) => row.data.raw_text === rawText)) continue
+            // Cities don't have country info in raw job data; queue without country
+            this.resolver.queueCity(rawText, null)
             rows.push({
               table: childConfig.table,
-              matchBy: { job_id: actualJobId },
-              data: { job_id: actualJobId, city_id: cityId ?? null, raw_text: rawText },
+              matchBy: { raw_text: rawText },
+              data: { raw_text: rawText },
             })
           }
         }
@@ -186,59 +212,98 @@ export class TransformEngine {
           data: r.data,
         })))
       }
-
-      allEntities.push({
-        entity: 'jobs',
-        table: jobEntity.table,
-        matchBy: { source_id: this.sourceId, external_id: jobRecord.external_id },
-        data: jobRecord,
-      })
     }
 
-    // 4. Sync child tables per job
+    // Batch upsert jobs with content hash no-op detection
+    let upsertResult = { jobsNew: 0, jobsUpdated: 0, jobIds: new Map<string, string>() }
+    if (jobRecords.length > 0) {
+      upsertResult = await this.repo.upsertJobsBatch(jobRecords.map((jr) => jr.record as any))
+    }
+    jobsSavedNew = upsertResult.jobsNew
+    jobsSavedUpdated = upsertResult.jobsUpdated
+
+    // Build jobId map for child entity sync
+    const jobIdMap = upsertResult.jobIds
+
+    // Batch resolve all entity names
+    await this.resolver.batchResolveAll()
+
+    // Sync child entities for upserted jobs only
+    const upsertedJobIds = new Set<string>()
+    for (const extId of jobIdMap.keys()) {
+      const jobId = jobIdMap.get(extId)
+      if (jobId) upsertedJobIds.add(jobId)
+    }
+
+    // Collect child entity data per job
     const jobSkillsMap = new Map<string, string[]>()
     const jobCategoriesMap = new Map<string, Array<{ category_id: string; classification_confidence?: number | null }>>()
     const jobLocationsMap = new Map<string, Array<{ city_id?: string | null; raw_text?: string | null }>>()
 
-    for (const ent of allEntities) {
-      if (ent.entity === 'job_skills') {
-        const skillId = ent.matchBy.skill_id as string
-        const jobId = ent.data.job_id as string
-        const arr = jobSkillsMap.get(jobId) ?? []
-        if (!arr.includes(skillId)) arr.push(skillId)
-        jobSkillsMap.set(jobId, arr)
-      } else if (ent.entity === 'job_categories') {
-        const jobId = ent.data.job_id as string
-        const arr = jobCategoriesMap.get(jobId) ?? []
-        arr.push({
-          category_id: ent.data.category_id as string,
-          classification_confidence: ent.data.classification_confidence as number | null,
-        })
-        jobCategoriesMap.set(jobId, arr)
-      } else if (ent.entity === 'locations') {
-        const jobId = ent.data.job_id as string
-        const arr = jobLocationsMap.get(jobId) ?? []
-        arr.push({ city_id: ent.data.city_id as string | null, raw_text: ent.data.raw_text as string | null })
-        jobLocationsMap.set(jobId, arr)
+    for (const { record, rawJob } of jobRecords) {
+      const externalId = record.external_id as string
+      const jobId = jobIdMap.get(externalId)
+      if (!jobId) continue
+
+      const childEntities = ['job_skills', 'job_categories', 'locations']
+      for (const childName of childEntities) {
+        const childConfig = this.config.entities[childName]
+        if (!childConfig) continue
+
+        const sourceArray = getFieldValue(asRecord(rawJob), childConfig.sourceArray ?? '')
+        if (!Array.isArray(sourceArray)) continue
+
+        for (const item of sourceArray) {
+          const itemObj = asRecord(item === null || item === undefined ? {} : item)
+          const childData = this.mapFields(itemObj, childConfig.fields)
+          const resolvedValue = childData._resolved ?? itemObj._resolved ?? item
+
+          if (childName === 'job_skills') {
+            const skillName = String(resolvedValue)
+            const skillId = this.resolver.getSkillId(skillName)
+            if (skillId) {
+              const arr = jobSkillsMap.get(jobId) ?? []
+              if (!arr.includes(skillId)) arr.push(skillId)
+              jobSkillsMap.set(jobId, arr)
+            }
+          } else if (childName === 'job_categories') {
+            const categoryName = String(resolvedValue)
+            const categoryId = this.resolver.getCategoryId(categoryName)
+            if (categoryId) {
+              const arr = jobCategoriesMap.get(jobId) ?? []
+              if (!arr.some((c) => c.category_id === categoryId)) {
+                arr.push({
+                  category_id: categoryId,
+                  classification_confidence: Number(childData.classification_confidence) ?? null,
+                })
+                jobCategoriesMap.set(jobId, arr)
+              }
+            }
+          } else if (childName === 'locations') {
+            const rawText = String(childData.raw_text ?? resolvedValue)
+            const cityId = this.resolver.getCityId(rawText)
+            const arr = jobLocationsMap.get(jobId) ?? []
+            const exists = arr.some((loc) => loc.city_id === (cityId ?? null) && loc.raw_text === rawText)
+            if (!exists) {
+              arr.push({ city_id: cityId ?? null, raw_text: rawText })
+              jobLocationsMap.set(jobId, arr)
+            }
+          }
+        }
       }
     }
 
-    const upsertedJobIds = new Set<string>()
-    for (const ent of allEntities) {
-      if (ent.entity === 'jobs') {
-        upsertedJobIds.add(ent.data.id as string)
-      }
-    }
-
+    // Batch sync child tables
     for (const jobId of upsertedJobIds) {
       const skills = jobSkillsMap.get(jobId) ?? []
-      await this.repo.syncJobSkills(jobId, skills)
-
       const categories = jobCategoriesMap.get(jobId) ?? []
-      await this.repo.syncJobCategories(jobId, categories)
-
       const locations = jobLocationsMap.get(jobId) ?? []
-      await this.repo.syncLocations(jobId, locations)
+
+      await Promise.all([
+        this.repo.syncJobSkillsBatch(jobId, skills),
+        this.repo.syncJobCategoriesBatch(jobId, categories),
+        this.repo.syncLocationsBatch(jobId, locations),
+      ])
     }
 
     return {

@@ -82,6 +82,7 @@ export async function ensureDatabase(): Promise<void> {
       posted_at DATETIME NULL,
       raw_data JSON NULL,
       fetched_at DATETIME NULL,
+      content_hash CHAR(64) NULL,
       created_at DATETIME NOT NULL,
       updated_at DATETIME NOT NULL,
       FOREIGN KEY (source_id) REFERENCES sources(id) ON DELETE CASCADE,
@@ -182,6 +183,15 @@ export async function ensureDatabase(): Promise<void> {
 
   for (const sql of statements) {
     await query(sql)
+  }
+
+  // Add content_hash column to jobs table if missing
+  const existingHashCols = await query<any>(`
+    SELECT COLUMN_NAME FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'jobs' AND COLUMN_NAME = 'content_hash'
+  `)
+  if (existingHashCols.length === 0) {
+    await query(`ALTER TABLE jobs ADD COLUMN content_hash CHAR(64) NULL AFTER fetched_at`)
   }
 
   // Add working_mode column if missing (idempotent: MySQL has no ADD COLUMN IF NOT EXISTS)
