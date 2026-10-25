@@ -4,9 +4,13 @@ import {
   computeTileRange,
   PMTilesSourceConfig,
 } from './pmtiles'
+import { UpstreamRateLimitError, UpstreamTransientError, isRetryableError } from './errors'
 
 const DETAILS_BATCH_SIZE = 50
 const DETAILS_ROWS_PER_PAGE = 12
+const MAX_PAGES_PER_BATCH = 10
+const MAX_DETAILS_IDS_PER_CYCLE = 500
+const MAX_TILES_PER_CYCLE = 100
 
 export interface NormalizedReziJob {
   obfuscated_id?: string | number
@@ -40,7 +44,7 @@ export class ReziJobSource extends JobSource {
   }
 
   async fetch(geographicArea: GeographicArea): Promise<FetchResult> {
-    const { logger, rateLimiter } = this.ctx
+    const { logger, rateLimiter, clock } = this.ctx
     const config = this.ctx.source.config as PMTilesSourceConfig
 
     const definition = geographicArea.definition as {
@@ -64,16 +68,21 @@ export class ReziJobSource extends JobSource {
 
     const abortController = new AbortController()
 
+    let upstreamRequests = 0
+    let upstreamResponses = 0
+
     // ─── STEP 1: Fetch obfuscated_ids from PMTiles tiles ───
     let jobIdsResult
     try {
       await rateLimiter.acquire()
+      upstreamRequests++
       jobIdsResult = await fetchPmtilesJobIds(
         config,
         [minLon, minLat, maxLon, maxLat],
         zoom,
         abortController.signal
       )
+      upstreamResponses++
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
       logger.error(`Rezi PMTiles fetch failed for ${geographicArea.name}`, { error: message })
@@ -94,6 +103,14 @@ export class ReziJobSource extends JobSource {
       obfuscatedIds: obfuscatedIds.length,
     })
 
+    // Bound the number of IDs processed per cycle
+    if (obfuscatedIds.length > MAX_DETAILS_IDS_PER_CYCLE) {
+      const limited = obfuscatedIds.slice(0, MAX_DETAILS_IDS_PER_CYCLE)
+      warnings.push(`Limited details fetch to ${MAX_DETAILS_IDS_PER_CYCLE} IDs (had ${obfuscatedIds.length})`)
+      obfuscatedIds.length = 0
+      obfuscatedIds.push(...limited)
+    }
+
     if (obfuscatedIds.length === 0) {
       return {
         rawJobs: [],
@@ -104,6 +121,8 @@ export class ReziJobSource extends JobSource {
           zoom,
           tilesFetched: jobIdsResult.tilesFetched,
           obfuscatedIdsCount: 0,
+          upstreamRequests,
+          upstreamResponses,
         },
         warnings,
       }
@@ -115,7 +134,11 @@ export class ReziJobSource extends JobSource {
       obfuscatedIds,
       rateLimiter,
       abortController,
-      logger
+      logger,
+      (req, res) => {
+        upstreamRequests += req
+        upstreamResponses += res
+      }
     )
 
     return this.buildFetchResult(
@@ -128,18 +151,15 @@ export class ReziJobSource extends JobSource {
         tilesFetched: jobIdsResult.tilesFetched,
         obfuscatedIdsCount: obfuscatedIds.length,
         detailsApiUrl: config.detailsApiUrl,
+        upstreamRequests,
+        upstreamResponses,
       },
       warnings
     )
   }
 
-  /**
-   * Proactive path: fetch jobs by keyword using the Search API → Details API.
-   * No geographic area is required — the search endpoint returns jobs matching
-   * the query across all locations.
-   */
   async fetchByKeywords(keywords: string[]): Promise<FetchResult> {
-    const { logger, rateLimiter } = this.ctx
+    const { logger, rateLimiter, clock } = this.ctx
     const config = this.ctx.source.config as PMTilesSourceConfig
 
     const searchApiUrl = config.searchApiUrl || 'https://api.rezi.ai/v1/search-engine/maps/jobs/search'
@@ -148,19 +168,33 @@ export class ReziJobSource extends JobSource {
     const abortController = new AbortController()
     const warnings: string[] = []
 
+    let upstreamRequests = 0
+    let upstreamResponses = 0
+
     // Step 1: Search → collect obfuscated_ids
     let obfuscatedIds: number[] = []
     for (const keyword of keywords) {
       try {
         await rateLimiter.acquire()
+        upstreamRequests++
         const response = await fetch(searchApiUrl, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ query: keyword }),
           signal: abortController.signal,
         })
+        upstreamResponses++
+
+        if (response.status === 429) {
+          const retryAfter = response.headers.get('Retry-After')
+          const retryAfterMs = retryAfter ? parseInt(retryAfter, 10) * 1000 : 60000
+          throw new UpstreamRateLimitError(retryAfterMs, `Search API rate limited for "${keyword}"`)
+        }
 
         if (!response.ok) {
+          if (response.status >= 500) {
+            throw new UpstreamTransientError(response.status, `Search API ${response.status} for "${keyword}"`)
+          }
           warnings.push(`Search API for "${keyword}" failed: HTTP ${response.status}`)
           continue
         }
@@ -177,6 +211,7 @@ export class ReziJobSource extends JobSource {
           }
         }
       } catch (err) {
+        if (isRetryableError(err)) throw err
         const message = err instanceof Error ? err.message : String(err)
         warnings.push(`Search API for "${keyword}" error: ${message}`)
       }
@@ -187,11 +222,19 @@ export class ReziJobSource extends JobSource {
       obfuscatedIds: obfuscatedIds.length,
     })
 
+    // Bound the number of IDs processed per cycle
+    if (obfuscatedIds.length > MAX_DETAILS_IDS_PER_CYCLE) {
+      const limited = obfuscatedIds.slice(0, MAX_DETAILS_IDS_PER_CYCLE)
+      warnings.push(`Limited details fetch to ${MAX_DETAILS_IDS_PER_CYCLE} IDs (had ${obfuscatedIds.length})`)
+      obfuscatedIds.length = 0
+      obfuscatedIds.push(...limited)
+    }
+
     if (obfuscatedIds.length === 0) {
       return {
         rawJobs: [],
         metrics: { jobsFound: 0, obfuscatedIdsFound: 0 },
-        metadata: { keywords, obfuscatedIdsCount: 0, detailsApiUrl },
+        metadata: { keywords, obfuscatedIdsCount: 0, detailsApiUrl, upstreamRequests, upstreamResponses },
         warnings,
       }
     }
@@ -202,13 +245,17 @@ export class ReziJobSource extends JobSource {
       obfuscatedIds,
       rateLimiter,
       abortController,
-      logger
+      logger,
+      (req, res) => {
+        upstreamRequests += req
+        upstreamResponses += res
+      }
     )
 
     return this.buildFetchResult(
       logger,
       detailsResult,
-      { keywords, obfuscatedIdsCount: obfuscatedIds.length, detailsApiUrl },
+      { keywords, obfuscatedIdsCount: obfuscatedIds.length, detailsApiUrl, upstreamRequests, upstreamResponses },
       warnings
     )
   }
@@ -218,22 +265,26 @@ export class ReziJobSource extends JobSource {
     obfuscatedIds: number[],
     rateLimiter: any,
     abortController: AbortController,
-    logger: any
+    logger: any,
+    countUpstream: (req: number, res: number) => void
   ): Promise<{ rawJobs: unknown[]; warnings: string[] }> {
     const detailsApiUrl = config.detailsApiUrl || 'https://api.rezi.ai/v1/search-engine/maps/jobs/details'
     const rawJobs: unknown[] = []
     const warnings: string[] = []
 
-    // The details API treats obfuscated_ids as a pool and paginates the result set
-    // via page/rows_per_page (confirmed by HAR: page 1 != page 2 for same ID list).
-    // We therefore paginate each batch until a page returns fewer than rows_per_page.
     for (let i = 0; i < obfuscatedIds.length; i += DETAILS_BATCH_SIZE) {
       const batch = obfuscatedIds.slice(i, i + DETAILS_BATCH_SIZE)
       let page = 1
 
       while (true) {
+        if (page > MAX_PAGES_PER_BATCH) {
+          warnings.push(`Max pages per batch (${MAX_PAGES_PER_BATCH}) reached for batch ${Math.floor(i / DETAILS_BATCH_SIZE) + 1}`)
+          break
+        }
+
         try {
           await rateLimiter.acquire()
+          countUpstream(1, 0)
 
           const response = await fetch(`${detailsApiUrl}?page=${page}&rows_per_page=${DETAILS_ROWS_PER_PAGE}`, {
             method: 'POST',
@@ -243,8 +294,18 @@ export class ReziJobSource extends JobSource {
             body: JSON.stringify({ obfuscated_ids: batch }),
             signal: abortController.signal,
           })
+          countUpstream(0, 1)
+
+          if (response.status === 429) {
+            const retryAfter = response.headers.get('Retry-After')
+            const retryAfterMs = retryAfter ? parseInt(retryAfter, 10) * 1000 : 60000
+            throw new UpstreamRateLimitError(retryAfterMs, `Details API rate limited batch ${Math.floor(i / DETAILS_BATCH_SIZE) + 1} page ${page}`)
+          }
 
           if (!response.ok) {
+            if (response.status >= 500) {
+              throw new UpstreamTransientError(response.status, `Details API ${response.status} batch ${Math.floor(i / DETAILS_BATCH_SIZE) + 1} page ${page}`)
+            }
             warnings.push(`Details API batch ${Math.floor(i / DETAILS_BATCH_SIZE) + 1} page ${page} failed: HTTP ${response.status}`)
             break
           }
@@ -268,6 +329,7 @@ export class ReziJobSource extends JobSource {
 
           page++
         } catch (err) {
+          if (isRetryableError(err)) throw err
           const message = err instanceof Error ? err.message : String(err)
           warnings.push(`Details API batch ${Math.floor(i / DETAILS_BATCH_SIZE) + 1} page ${page} error: ${message}`)
           break

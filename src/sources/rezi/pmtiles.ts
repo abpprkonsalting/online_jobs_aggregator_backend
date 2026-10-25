@@ -14,6 +14,8 @@ export interface PMTilesIdsResult {
   warnings: string[]
 }
 
+const MAX_TILES_PER_CYCLE = 100
+
 /**
  * Decode unsigned LEB128 varints from a binary buffer.
  * PMTiles job tiles contain a sequence of varint-encoded obfuscated_id integers.
@@ -96,7 +98,7 @@ export async function fetchPmtilesJobIds(
   }
 
   const { minX, maxX, minY, maxY } = computeTileRange(bbox, zoom)
-  const maxTiles = config.max_tiles ?? 100
+  const maxTiles = config.max_tiles ?? MAX_TILES_PER_CYCLE
 
   const source = new FetchSource(pmtilesUrl)
   const pmtiles = new PMTiles(source)
