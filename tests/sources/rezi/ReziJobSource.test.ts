@@ -13,6 +13,7 @@ vi.mock('../../../src/sources/rezi/pmtiles', () => ({
 }))
 
 import { ReziJobSource } from '../../../src/sources/rezi/ReziJobSource'
+import { UpstreamRateLimitError, UpstreamTransientError } from '../../../src/sources/rezi/errors'
 
 const sourceConfig = {
   id: 'source-1',
@@ -23,6 +24,7 @@ const sourceConfig = {
     searchApiUrl: 'https://rezi.example.test/search',
     detailsApiUrl: 'https://rezi.example.test/details',
     pmtilesUrl: 'https://rezi.example.test/jobs.pmtiles',
+    api_delay: 0.1,
   },
   enabled: true,
 }
@@ -139,6 +141,29 @@ describe('ReziJobSource', () => {
     expect(result.metadata).toMatchObject({ area: 'area-1', obfuscatedIdsCount: 1 })
   })
 
+  it('exposes upstream request and response counts in metadata', async () => {
+    fetchPmtilesJobIds.mockResolvedValue({
+      obfuscatedIds: [123],
+      tilesFetched: 1,
+      warnings: [],
+    })
+    fetchMock.mockResolvedValue(new Response(JSON.stringify({ jobs: [validJob()] })))
+    const { context } = createContext()
+
+    const result = await new ReziJobSource(context).fetch({
+      id: 'area-1',
+      name: 'Boston',
+      definition: { bbox: [-71, 42, -70, 43], zoom: 9 },
+    })
+
+    expect(result.metadata).toHaveProperty('upstreamRequests')
+    expect(result.metadata).toHaveProperty('upstreamResponses')
+    expect(typeof result.metadata!.upstreamRequests).toBe('number')
+    expect(typeof result.metadata!.upstreamResponses).toBe('number')
+    expect(result.metadata!.upstreamRequests).toBeGreaterThanOrEqual(1)
+    expect(result.metadata!.upstreamResponses).toBeGreaterThanOrEqual(1)
+  })
+
   it('skips the details request if passive tile lookup returns no ids', async () => {
     fetchPmtilesJobIds.mockResolvedValue({ obfuscatedIds: [], tilesFetched: 3, warnings: [] })
     const { context } = createContext()
@@ -203,21 +228,81 @@ describe('ReziJobSource', () => {
     expect(acquire).toHaveBeenCalledTimes(5)
   })
 
-  it('returns warnings for failed search and details responses instead of throwing', async () => {
-    fetchMock
-      .mockResolvedValueOnce(new Response('', { status: 503 }))
-      .mockResolvedValueOnce(new Response(JSON.stringify({
-        data: { roles: { role: { locations: { features: [{ properties: { id: 5 } }] } } } },
-      })))
-      .mockResolvedValueOnce(new Response('', { status: 502 }))
+  it('limits details IDs per cycle and warns when truncated', async () => {
+    const manyIds = Array.from({ length: 600 }, (_v, i) => i + 1)
+    fetchMock.mockImplementation(async (input: string | URL) => {
+      const url = String(input)
+      if (url === 'https://rezi.example.test/search') {
+        return new Response(JSON.stringify({
+          data: {
+            roles: {
+              dev: {
+                locations: {
+                  features: manyIds.map((id) => ({ properties: { id } })),
+                },
+              },
+            },
+          },
+        }))
+      }
+      return new Response(JSON.stringify({ data: { jobs: [validJob({ obfuscated_id: 1 })] } }))
+    })
     const { context } = createContext()
 
-    const result = await new ReziJobSource(context).fetchByKeywords(['failing', 'successful'])
+    const result = await new ReziJobSource(context).fetchByKeywords(['test'])
 
-    expect(result.rawJobs).toEqual([])
-    expect(result.warnings).toEqual([
-      'Search API for "failing" failed: HTTP 503',
-      'Details API batch 1 page 1 failed: HTTP 502',
-    ])
+    expect(result.rawJobs.length).toBeGreaterThan(0)
+    expect(result.warnings).toContain('Limited details fetch to 500 IDs (had 600)')
+  })
+
+  it('throws UpstreamRateLimitError on 429 with Retry-After', async () => {
+    fetchPmtilesJobIds.mockResolvedValue({ obfuscatedIds: [1], tilesFetched: 1, warnings: [] })
+    fetchMock
+      .mockResolvedValueOnce(new Response('', { status: 429, headers: { 'Retry-After': '30' } }))
+
+    const { context } = createContext()
+    await expect(new ReziJobSource(context).fetch({
+      id: 'area-1',
+      name: 'Boston',
+      definition: { bbox: [-71, 42, -70, 43], zoom: 9 },
+    })).rejects.toThrow(UpstreamRateLimitError)
+  })
+
+  it('throws UpstreamTransientError on 5xx from search API', async () => {
+    fetchMock.mockResolvedValue(new Response('', { status: 503 }))
+
+    const { context } = createContext()
+    await expect(new ReziJobSource(context).fetchByKeywords(['test'])).rejects.toThrow(UpstreamTransientError)
+  })
+
+  it('throws UpstreamTransientError on 5xx from details API', async () => {
+    fetchPmtilesJobIds.mockResolvedValue({ obfuscatedIds: [1], tilesFetched: 1, warnings: [] })
+    fetchMock.mockResolvedValue(new Response('', { status: 502 }))
+
+    const { context } = createContext()
+    await expect(new ReziJobSource(context).fetch({
+      id: 'area-1',
+      name: 'Boston',
+      definition: { bbox: [-71, 42, -70, 43], zoom: 9 },
+    })).rejects.toThrow(UpstreamTransientError)
+  })
+
+  it('limits pages per batch and warns', async () => {
+    fetchPmtilesJobIds.mockResolvedValue({ obfuscatedIds: [1], tilesFetched: 1, warnings: [] })
+    // First 10 pages return full pages, 11th would exceed limit
+    for (let i = 0; i < 12; i++) {
+      fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({
+        data: { jobs: Array.from({ length: 12 }, (_v, j) => validJob({ obfuscated_id: i * 12 + j + 1 })) }
+      })))
+    }
+
+    const { context } = createContext()
+    const result = await new ReziJobSource(context).fetch({
+      id: 'area-1',
+      name: 'Boston',
+      definition: { bbox: [-71, 42, -70, 43], zoom: 9 },
+    })
+
+    expect(result.warnings).toContain('Max pages per batch (10) reached for batch 1')
   })
 })

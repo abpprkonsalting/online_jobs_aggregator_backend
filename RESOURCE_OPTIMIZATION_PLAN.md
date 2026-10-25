@@ -137,27 +137,27 @@ Highest priority; likely to reduce repeated work without changing the transform 
 
 ### Phase 2 — Throttle upstream requests and bound fetch work
 
-- [ ] **BO2.1 — Make rate limiting serialize acquisitions.** The `TokenBucketRateLimiter` default permits an initial burst of ten requests. Serialize acquisitions so concurrent adapter calls cannot exceed the intended request rate.  
+- [x] **BO2.1 — Make rate limiting serialize acquisitions.** The `TokenBucketRateLimiter` default permits an initial burst of ten requests. Serialize acquisitions so concurrent adapter calls cannot exceed the intended request rate.  
   **Release type:** `fix(backend):` → **patch**  
   **Accept when:** concurrent `acquire()` calls are spaced by the configured rate and never exceed one request per refill interval.  
   **Commit scope:** `fix(backend): serialize rate-limiter acquisitions`
-- [ ] **BO2.2 — Configure a nonzero Rezi `api_delay` after measuring cadence.** Measure current request cadence, then set `api_delay` in source config so the fixed-delay limiter paces requests.  
+- [x] **BO2.2 — Configure a nonzero Rezi `api_delay` after measuring cadence.** Measure current request cadence, then set `api_delay` in source config so the fixed-delay limiter paces requests.  
   **Release type:** `feat(backend):` → **minor**  
   **Accept when:** production logs show upstream requests spaced by the configured `api_delay`.  
   **Commit scope:** `feat(backend): configure measured Rezi api_delay`
-- [ ] **BO2.3 — Honor `Retry-After` on `429` and bound transient backoff.** On `429`, wait the `Retry-After` duration; on other transient failures, use bounded exponential backoff with a strict retry cap. Avoid retrying the whole area when only a details page failed if the adapter can safely resume that page.  
+- [x] **BO2.3 — Honor `Retry-After` on `429` and bound transient backoff.** On `429`, wait the `Retry-After` duration; on other transient failures, use bounded exponential backoff with a strict retry cap. Avoid retrying the whole area when only a details page failed if the adapter can safely resume that page.  
   **Release type:** `feat(backend):` → **minor**  
   **Accept when:** a `429` with `Retry-After` delays only the affected request, and transient failures stop after the retry cap.  
   **Commit scope:** `feat(backend): honor Retry-After and bounded backoff`
-- [ ] **BO2.4 — Bound pages, IDs, and tile work per cycle.** Cap pages, IDs, and tile work per cycle and make the partial result explicit in metadata/warnings. Keep caps high enough not to silently truncate valid coverage.  
+- [x] **BO2.4 — Bound pages, IDs, and tile work per cycle.** Cap pages, IDs, and tile work per cycle and make the partial result explicit in metadata/warnings. Keep caps high enough not to silently truncate valid coverage.  
   **Release type:** `feat(backend):` → **minor**  
   **Accept when:** a cycle with more IDs than the cap returns a bounded result set with a warning, and coverage loss is visible in metadata.  
   **Commit scope:** `feat(backend): bound per-cycle fetch work`
-- [ ] **BO2.5 — Preserve deduplication and expose upstream counts.** Keep ID and job deduplication; expose per-cycle upstream request and response counts in fetch-run metadata.  
+- [x] **BO2.5 — Preserve deduplication and expose upstream counts.** Keep ID and job deduplication; expose per-cycle upstream request and response counts in fetch-run metadata.  
   **Release type:** `feat(backend):` → **minor**  
   **Accept when:** fetch-run metadata includes request/response counts and duplicate IDs are not re-fetched within a cycle.  
   **Commit scope:** `feat(backend): expose upstream request counts`
-- [ ] **BO2.6 — Add rate-limiter and throttling tests.** Deterministic tests using fake timers for spacing, burst limits, concurrent callers, `429`, and configured caps.  
+- [x] **BO2.6 — Add rate-limiter and throttling tests.** Deterministic tests using fake timers for spacing, burst limits, concurrent callers, `429`, and configured caps.  
   **Release type:** `test(backend):` → **no bump**  
   **Accept when:** all new tests pass in `tests/utils/rate-limiter.test.ts` and `tests/sources/rezi/ReziJobSource.test.ts`.  
   **Commit scope:** `test(backend): cover rate limiting and fetch bounds`
