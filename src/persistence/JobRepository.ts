@@ -192,9 +192,29 @@ export class JobRepository {
     const countRows = await query<Array<{ total: number } & RowDataPacket>>(countSql, params_)
     const total = countRows[0]?.total ?? 0
 
+    // Fields to select for list view (exclude large/internal fields: description_text, raw_data, content_hash)
+    const listFields = [
+      'j.id',
+      'j.source_id',
+      'j.external_id',
+      'j.title',
+      'j.organization',
+      'j.job_url',
+      'j.allow_remote',
+      'j.salary_min',
+      'j.salary_max',
+      'j.salary_currency',
+      'j.salary_unit',
+      'j.date_posted',
+      'j.posted_at',
+      'j.fetched_at',
+      'j.created_at',
+      'j.updated_at',
+    ]
+
     // Fetch page with sort and pagination
     const dataSql = `
-      SELECT j.* FROM jobs j
+      SELECT ${listFields.join(', ')} FROM jobs j
       ${whereSql}
       ORDER BY j.${safeSort} ${safeSortDir}
       LIMIT ? OFFSET ?
@@ -225,11 +245,13 @@ export class JobRepository {
     return query<any>(`SELECT * FROM sources ORDER BY name ASC`)
   }
 
-  async listFetchRuns(sourceId?: string): Promise<any[]> {
+  async listFetchRuns(sourceId?: string, limit?: number, offset?: number): Promise<any[]> {
+    const safeLimit = Math.min(limit ?? 50, 100)
+    const safeOffset = offset ?? 0
     if (sourceId) {
-      return query<any>(`SELECT * FROM fetch_runs WHERE source_id = ? ORDER BY created_at DESC`, [sourceId])
+      return query<any>(`SELECT * FROM fetch_runs WHERE source_id = ? ORDER BY created_at DESC LIMIT ? OFFSET ?`, [sourceId, safeLimit, safeOffset])
     }
-    return query<any>(`SELECT * FROM fetch_runs ORDER BY created_at DESC`)
+    return query<any>(`SELECT * FROM fetch_runs ORDER BY created_at DESC LIMIT ? OFFSET ?`, [safeLimit, safeOffset])
   }
 
   async listCountries(): Promise<any[]> {
