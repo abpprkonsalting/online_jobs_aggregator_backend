@@ -1,4 +1,4 @@
-import { JobRepository } from '../persistence/JobRepository'
+import { IJobRepository } from '../persistence/IJobRepository'
 import { EntityResolver } from './resolver'
 import type { TransformConfig, TransformResult } from './types'
 import crypto from 'crypto'
@@ -80,13 +80,13 @@ interface UpsertBatchResult {
 }
 
 export class TransformEngine {
-  private repo: JobRepository
+  private repo: IJobRepository
   private config: TransformConfig
   private sourceId: string
   private logger: any
   private resolver: EntityResolver
 
-  constructor(repo: JobRepository, config: TransformConfig, sourceId: string, logger: any) {
+  constructor(repo: IJobRepository, config: TransformConfig, sourceId: string, logger: any) {
     this.repo = repo
     this.config = config
     this.sourceId = sourceId

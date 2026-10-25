@@ -1,7 +1,8 @@
 import { Pool } from 'mysql2/promise'
-import { query } from './db'
+import { getDriver } from './db'
 
 export async function ensureDatabase(): Promise<void> {
+  const driver = getDriver()
   const statements = [
     `CREATE TABLE IF NOT EXISTS sources (
       id CHAR(36) PRIMARY KEY,
@@ -182,25 +183,25 @@ export async function ensureDatabase(): Promise<void> {
   ]
 
   for (const sql of statements) {
-    await query(sql)
+    await driver.query(sql)
   }
 
   // Add content_hash column to jobs table if missing
-  const existingHashCols = await query<any>(`
+  const existingHashCols = await driver.query<any>(`
     SELECT COLUMN_NAME FROM information_schema.COLUMNS
     WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'jobs' AND COLUMN_NAME = 'content_hash'
   `)
-  if (existingHashCols.length === 0) {
-    await query(`ALTER TABLE jobs ADD COLUMN content_hash CHAR(64) NULL AFTER fetched_at`)
+  if (existingHashCols.rows.length === 0) {
+    await driver.query(`ALTER TABLE jobs ADD COLUMN content_hash CHAR(64) NULL AFTER fetched_at`)
   }
 
   // Add working_mode column if missing (idempotent: MySQL has no ADD COLUMN IF NOT EXISTS)
-  const existingCols = await query<any>(`
+  const existingCols = await driver.query<any>(`
     SELECT COLUMN_NAME FROM information_schema.COLUMNS
     WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'sources' AND COLUMN_NAME = 'working_mode'
   `)
-  if (existingCols.length === 0) {
-    await query(`ALTER TABLE sources ADD COLUMN working_mode ENUM('passive','proactive','both') NOT NULL DEFAULT 'both' AFTER type`)
+  if (existingCols.rows.length === 0) {
+    await driver.query(`ALTER TABLE sources ADD COLUMN working_mode ENUM('passive','proactive','both') NOT NULL DEFAULT 'both' AFTER type`)
   }
 
   // Add measured indexes for query performance (idempotent)
@@ -218,12 +219,12 @@ export async function ensureDatabase(): Promise<void> {
   ]
 
   for (const idx of indexDefinitions) {
-    const existingIdx = await query<any>(`
+    const existingIdx = await driver.query<any>(`
       SELECT INDEX_NAME FROM information_schema.STATISTICS
       WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND INDEX_NAME = ?
     `, [idx.table, idx.name])
-    if (existingIdx.length === 0) {
-      await query(`ALTER TABLE \`${idx.table}\` ADD INDEX \`${idx.name}\` (${idx.columns})`)
+    if (existingIdx.rows.length === 0) {
+      await driver.query(`ALTER TABLE \`${idx.table}\` ADD INDEX \`${idx.name}\` (${idx.columns})`)
     }
   }
 }
@@ -234,8 +235,8 @@ export async function seedAdminUser(
   role: 'admin' | 'user' = 'admin'
 ): Promise<void> {
   const { hashPassword } = await import('../utils/auth')
-  const JobRepository = (await import('../persistence/JobRepository')).default
-  const repo = new JobRepository()
+  const { createJobRepository } = await import('../database/db')
+  const repo = createJobRepository()
   const existing = await repo.getUserByEmail(email)
   if (existing) return
   const hash = await hashPassword(password)

@@ -1,14 +1,14 @@
-import { JobRepository } from '../persistence/JobRepository'
+import { IJobRepository } from '../persistence/IJobRepository'
 
 export interface EntityResolverContext {
-  repo: JobRepository
+  repo: IJobRepository
   sourceId: string
   logger: any
   cache: Map<string, string> // lookup key -> entity id
 }
 
 export class EntityResolver {
-  private repo: JobRepository
+  private repo: IJobRepository
   private logger: any
   private cache: Map<string, string>
 

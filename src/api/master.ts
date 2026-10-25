@@ -1,9 +1,9 @@
 import { Router, Request, Response } from 'express'
 import { body, validationResult } from 'express-validator'
-import { JobRepository } from '../persistence/JobRepository'
+import { createJobRepository } from '../database/db'
 
 const router = Router()
-const repo = new JobRepository()
+const repo = createJobRepository()
 
 function validate(req: Request, res: Response): boolean {
   const errors = validationResult(req)
