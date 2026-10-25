@@ -172,9 +172,19 @@ router.delete(
 )
 
 // ── Fetch runs ──
-router.get('/fetch-runs', async (_req: Request, res: Response) => {
-  const runs = await repo.listFetchRuns()
-  res.json(runs)
-})
+router.get(
+  '/fetch-runs',
+  [
+    query('limit').optional().isInt({ min: 1, max: 100 }),
+    query('offset').optional().isInt({ min: 0 }),
+  ],
+  async (req: Request, res: Response) => {
+    if (!validate(req, res)) return
+    const limit = Math.min(parseInt(req.query.limit as string) || 50, 100)
+    const offset = parseInt(req.query.offset as string) || 0
+    const runs = await repo.listFetchRuns(undefined, limit, offset)
+    res.json(runs)
+  }
+)
 
 export default router
