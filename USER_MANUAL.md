@@ -337,7 +337,7 @@ Configuration is provided via environment variables, typically in a `.env` file 
 | `ENABLED_SOURCES` | No | `rezi-map` | Comma-separated list of enabled source names |
 | **Polling / Scheduling** |
 | `POLL_INTERVAL_MS` | No | `5000` | Milliseconds between orchestrator poll cycles |
-| `MAX_CONCURRENT_SOURCES` | No | `3` | Maximum concurrent fetch cycles |
+| `MAX_CONCURRENT_SOURCES` | No | `3` | Deprecated: accepted but ignored; the serialized scheduler runs one fetch at a time |
 | `MAX_RETRIES` | No | `3` | Maximum retry attempts per fetch |
 | `RETRY_DELAY_MS` | No | `60000` | Milliseconds between retry attempts |
 | `API_TIMEOUT_MS` | No | `30000` | Timeout for external API requests |
@@ -514,7 +514,7 @@ sudo systemctl reload apache2
 |---|---|---|
 | No fetch runs recorded | No enabled sources in database | Add sources via `/api/admin/sources` |
 | Fetch cycles timing out | Target site slow or unreachable | Increase `FETCH_TIMEOUT_MS` or check network |
-| High memory usage | Too many concurrent browsers/sources | Reduce `MAX_CONCURRENT_SOURCES` |
+| High memory usage | Too many concurrent browsers/sources | The scheduler runs one fetch at a time; check `POLL_INTERVAL_MS` and transform batch size |
 
 ### Authentication issues
 
@@ -544,9 +544,8 @@ sudo systemctl reload apache2
 
 ### Rate Limiting
 
-- `MAX_CONCURRENT_SOURCES` controls how many fetch cycles run simultaneously. Default is 3.
+- `MAX_CONCURRENT_SOURCES` is deprecated: it is accepted and logged but ignored. The serialized scheduler runs one fetch cycle at a time.
 - `POLL_INTERVAL_MS` controls how often the orchestrator polls. Default is 5000ms.
-- Do not set `MAX_CONCURRENT_SOURCES` too high; it may overwhelm target job sources and your VPS.
 
 ### VPS Resource Footprint
 

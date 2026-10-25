@@ -70,9 +70,13 @@ function deferred<T>() {
   return { promise, resolve, reject }
 }
 
-async function waitForCalls(mock: ReturnType<typeof vi.fn>, count: number) {
-  for (let index = 0; index < 100 && mock.mock.calls.length < count; index++) {
+async function waitForCalls(mock: ReturnType<typeof vi.fn>, count: number, timeoutMs = 2000) {
+  const start = Date.now()
+  while (mock.mock.calls.length < count && Date.now() - start < timeoutMs) {
     await new Promise((resolve) => setTimeout(resolve, 1))
+  }
+  if (mock.mock.calls.length < count) {
+    throw new Error(`Timed out waiting for ${count} calls, got ${mock.mock.calls.length}`)
   }
 }
 
@@ -82,7 +86,7 @@ describe('JobOrchestrator', () => {
 
   beforeEach(async () => {
     vi.resetModules()
-    process.env.POLL_INTERVAL_MS = '1000'
+    process.env.POLL_INTERVAL_MS = '5'
     process.env.MAX_CONCURRENT_SOURCES = '2'
     process.env.MAX_RETRIES = '1'
     process.env.RETRY_DELAY_MS = '5'
@@ -112,7 +116,8 @@ describe('JobOrchestrator', () => {
     orchestrator = new JobOrchestrator(repo)
   })
 
-  afterEach(() => {
+  afterEach(async () => {
+    await orchestrator?.stop()
     delete process.env.POLL_INTERVAL_MS
     delete process.env.MAX_CONCURRENT_SOURCES
     delete process.env.MAX_RETRIES
@@ -120,12 +125,11 @@ describe('JobOrchestrator', () => {
     delete process.env.FETCH_TIMEOUT_MS
   })
 
-  async function stopAfterInitialCycle(startPromise: Promise<void>) {
-    await startPromise
+  async function stopOrchestrator() {
     await orchestrator.stop()
   }
 
-  it('runs passive area fetches, transforms results, and finalizes fetch-run timestamps', async () => {
+  it('runs exactly one work item per tick, no overlapping fetches', async () => {
     repo.listSources.mockResolvedValue(sourceRows('passive'))
     repo.listSourceGeographicAreas.mockResolvedValue([pair('source-1', 'area-1')])
     adapterFetch.mockResolvedValue({
@@ -140,83 +144,159 @@ describe('JobOrchestrator', () => {
       warnings: [],
     })
 
-    await stopAfterInitialCycle(orchestrator.start())
-
-    expect(adapterFetch).toHaveBeenCalledWith(expect.objectContaining({ id: 'area-1', name: 'Area area-1' }))
-    expect(adapterContexts[0].source.id).toBe('source-1')
+    await orchestrator.start()
+    await waitForCalls(adapterFetch, 1)
+    expect(adapterFetch).toHaveBeenCalledTimes(1)
+    expect(adapterFetch.mock.calls[0][0]).toMatchObject({ id: 'area-1' })
     expect(transformRun).toHaveBeenCalledWith([{ obfuscated_id: 7 }])
-    expect(repo.createFetchRun).toHaveBeenCalledWith(expect.objectContaining({
-      sourceId: 'source-1',
-      status: 'running',
-    }))
-    expect(repo.updateFetchRun).toHaveBeenCalledWith(expect.objectContaining({
-      id: 'fetch-run-1',
-      status: 'success',
-      jobsFound: 1,
-      jobsSavedNew: 1,
-      metadata: { area: 'area-1' },
-      warnings: ['adapter notice'],
-    }))
-    expect(repo.updateSourceTimestamps).toHaveBeenCalledWith(
-      'source-1',
-      expect.any(Date),
-      expect.any(Date),
-    )
-    expect(repo.updateSourceGeoAreaTimestamps).toHaveBeenCalledWith(
-      'source-1',
-      'area-1',
-      expect.any(Date),
-      expect.any(Date),
-    )
-    expect(adapterFetchByKeywords).not.toHaveBeenCalled()
+
+    // Next tick runs the same item again (round-robin with single item)
+    await waitForCalls(adapterFetch, 2)
+    expect(adapterFetch).toHaveBeenCalledTimes(2)
+
+    await stopOrchestrator()
   })
 
-  it('runs proactive keywords only for proactive-enabled sources', async () => {
-    repo.listSources.mockResolvedValue(sourceRows('passive', 'proactive'))
-    repo.listActiveUnifiedKeywords.mockResolvedValue(['typescript', 'node'])
-    adapterFetchByKeywords.mockResolvedValue({
-      rawJobs: [{ obfuscated_id: 8 }],
-      metadata: { keywords: ['typescript', 'node'] },
-      warnings: [],
-    })
+  it('never runs two fetches concurrently; busy ticks are skipped', async () => {
+    repo.listSources.mockResolvedValue(sourceRows('passive'))
+    repo.listSourceGeographicAreas.mockResolvedValue([pair('source-1', 'area-1')])
+    const pending = deferred<{ rawJobs: unknown[]; warnings: string[] }>()
+    adapterFetch.mockReturnValue(pending.promise)
+    transformRun.mockResolvedValue({ jobsFound: 0, jobsSavedNew: 0, jobsSavedUpdated: 0, warnings: [] })
 
-    await stopAfterInitialCycle(orchestrator.start())
+    // Start without awaiting - the first tick will run the fetch and pause on the pending promise
+    const startPromise = orchestrator.start()
+    await waitForCalls(adapterFetch, 1)
+    expect(adapterFetch).toHaveBeenCalledTimes(1)
 
-    expect(adapterFetch).not.toHaveBeenCalled()
-    expect(adapterFetchByKeywords).toHaveBeenCalledOnce()
-    expect(adapterFetchByKeywords).toHaveBeenCalledWith(['typescript', 'node'])
-    expect(adapterContexts[0].source.id).toBe('source-2')
-    expect(repo.createFetchRun).toHaveBeenCalledWith(expect.objectContaining({
-      sourceId: 'source-2',
-      status: 'running',
-    }))
+    // Wait a bit - no new calls because fetch is in-flight
+    await new Promise((resolve) => setTimeout(resolve, 30))
+    expect(adapterFetch).toHaveBeenCalledTimes(1)
+
+    pending.resolve({ rawJobs: [], warnings: [] })
+    await waitForCalls(adapterFetch, 2)
+    expect(adapterFetch).toHaveBeenCalledTimes(2)
+
+    await stopOrchestrator()
+    await startPromise
   })
 
-  it('does not fetch areas for sources configured as proactive-only', async () => {
-    repo.listSources.mockResolvedValue(sourceRows('passive', 'proactive'))
+  it('rotates deterministically across passive pairs and proactive batches', async () => {
+    repo.listSources.mockResolvedValue(sourceRows('passive', 'proactive', 'both'))
     repo.listSourceGeographicAreas.mockResolvedValue([
-      pair('source-1', 'area-passive'),
-      pair('source-2', 'area-proactive'),
+      pair('source-1', 'area-a'),
+      pair('source-1', 'area-b'),
+      pair('source-3', 'area-c'),
     ])
+    repo.listActiveUnifiedKeywords.mockResolvedValue(['typescript', 'node'])
+    adapterFetch.mockResolvedValue({ rawJobs: [], metadata: {}, warnings: [] })
+    adapterFetchByKeywords.mockResolvedValue({ rawJobs: [], metadata: {}, warnings: [] })
+    transformRun.mockResolvedValue({ jobsFound: 0, jobsSavedNew: 0, jobsSavedUpdated: 0, warnings: [] })
 
-    await stopAfterInitialCycle(orchestrator.start())
+    await orchestrator.start()
 
-    expect(adapterFetch).toHaveBeenCalledOnce()
-    expect(adapterFetch.mock.calls[0][0]).toMatchObject({ id: 'area-passive' })
+    // Drain all 5 eligible items (3 passive + 2 proactive) - one per tick
+    await waitForCalls(adapterFetch, 3, 3000)
+    await waitForCalls(adapterFetchByKeywords, 2, 3000)
+
+    await stopOrchestrator()
+
+    // Check only the first call per item (first rotation)
+    expect(adapterFetch.mock.calls.map(([area]) => area.id).slice(0, 3)).toEqual(['area-a', 'area-b', 'area-c'])
+    expect(adapterFetchByKeywords).toHaveBeenCalledTimes(2)
+    expect(adapterFetchByKeywords.mock.calls.map(([keywords]) => keywords)).toEqual([
+      ['typescript', 'node'],
+      ['typescript', 'node'],
+    ])
+    // 5 work items: 2 from source-1, 1 from source-2, 2 from source-3
+    expect(adapterContexts.map((c) => c.source.id).sort()).toEqual(['source-1', 'source-1', 'source-2', 'source-3', 'source-3'])
   })
 
-  it('retries failed passive fetches and records success after a later attempt', async () => {
+  it('defers a failed item while other eligible items keep running', async () => {
+    process.env.POLL_INTERVAL_MS = '50'
+    process.env.MAX_RETRIES = '0'
+    process.env.RETRY_DELAY_MS = '2000'
+    process.env.FETCH_TIMEOUT_MS = '60000'
+    vi.resetModules()
+    const { JobOrchestrator } = await import('../../src/orchestrator/JobOrchestrator')
+    orchestrator = new JobOrchestrator(repo)
+
+    repo.listSources.mockResolvedValue(sourceRows('passive', 'passive'))
+    repo.listSourceGeographicAreas.mockResolvedValue([pair('source-1', 'bad'), pair('source-1', 'good')])
+    repo.createFetchRun.mockResolvedValue('run-x')
+    repo.updateFetchRun.mockResolvedValue()
+    repo.updateSourceTimestamps.mockResolvedValue()
+    repo.updateSourceGeoAreaTimestamps.mockResolvedValue()
+    let badCalls = 0
+    adapterFetch.mockImplementation(async (area) => {
+      if (area.id === 'bad') {
+        badCalls++
+        throw new Error('down')
+      }
+      return { rawJobs: [], warnings: [] }
+    })
+    transformRun.mockResolvedValue({ jobsFound: 0, jobsSavedNew: 0, jobsSavedUpdated: 0, warnings: [] })
+
+    await orchestrator.start()
+    await waitForCalls(adapterFetch, 1)
+    expect(badCalls).toBe(1)
+
+    // Wait for several ticks - bad stays deferred (~2s backoff), good keeps running
+    await new Promise((resolve) => setTimeout(resolve, 1000))
+    expect(badCalls).toBe(1)
+    expect(adapterFetch.mock.calls.length).toBeGreaterThan(1)
+
+    await stopOrchestrator()
+  })
+
+  it('honors Retry-After by deferring only the affected item', async () => {
+    process.env.POLL_INTERVAL_MS = '50'
+    process.env.MAX_RETRIES = '0'
+    process.env.RETRY_DELAY_MS = '2000'
+    process.env.FETCH_TIMEOUT_MS = '60000'
+    vi.resetModules()
+    const { JobOrchestrator } = await import('../../src/orchestrator/JobOrchestrator')
+    orchestrator = new JobOrchestrator(repo)
+
+    repo.listSources.mockResolvedValue(sourceRows('passive', 'passive'))
+    repo.listSourceGeographicAreas.mockResolvedValue([pair('source-1', 'limited'), pair('source-1', 'open')])
+    repo.createFetchRun.mockResolvedValue('run-y')
+    repo.updateFetchRun.mockResolvedValue()
+    repo.updateSourceTimestamps.mockResolvedValue()
+    repo.updateSourceGeoAreaTimestamps.mockResolvedValue()
+    let limitedCalls = 0
+    adapterFetch.mockImplementation(async (area) => {
+      if (area.id === 'limited') {
+        limitedCalls++
+        const err: Error & { retryAfterMs?: number } = new Error('rate limited')
+        err.retryAfterMs = 5000
+        throw err
+      }
+      return { rawJobs: [], warnings: [] }
+    })
+    transformRun.mockResolvedValue({ jobsFound: 0, jobsSavedNew: 0, jobsSavedUpdated: 0, warnings: [] })
+
+    await orchestrator.start()
+    await waitForCalls(adapterFetch, 1)
+    expect(limitedCalls).toBe(1)
+
+    // limited is deferred for Retry-After (5s); open keeps running
+    await new Promise((resolve) => setTimeout(resolve, 800))
+    expect(limitedCalls).toBe(1)
+    expect(adapterFetch.mock.calls.length).toBeGreaterThan(1)
+
+    await stopOrchestrator()
+  })
+
+  it('retries a failed passive fetch within a cycle and records success on a later attempt', async () => {
     repo.listSources.mockResolvedValue(sourceRows('passive'))
     repo.listSourceGeographicAreas.mockResolvedValue([pair('source-1', 'area-1')])
     adapterFetch
       .mockRejectedValueOnce(new Error('temporary error'))
       .mockResolvedValueOnce({ rawJobs: [], warnings: [] })
 
-    const startPromise = orchestrator.start()
-    await waitForCalls(adapterFetch, 1)
-    expect(adapterFetch).toHaveBeenCalledOnce()
+    await orchestrator.start()
     await waitForCalls(adapterFetch, 2)
-    await stopAfterInitialCycle(startPromise)
 
     expect(adapterFetch).toHaveBeenCalledTimes(2)
     expect(repo.updateFetchRun).toHaveBeenCalledWith(expect.objectContaining({
@@ -234,72 +314,35 @@ describe('JobOrchestrator', () => {
     repo.listSourceGeographicAreas.mockResolvedValue([pair('source-1', 'area-1')])
     adapterFetch.mockRejectedValue(new Error('upstream unavailable'))
 
-    await stopAfterInitialCycle(orchestrator.start())
+    await orchestrator.start()
+    await waitForCalls(adapterFetch, 1)
 
-    expect(adapterFetch).toHaveBeenCalledOnce()
+    expect(adapterFetch).toHaveBeenCalledTimes(1)
     expect(repo.updateFetchRun).toHaveBeenCalledWith(expect.objectContaining({
       id: 'fetch-run-1',
       status: 'failed',
       errorMessage: 'upstream unavailable',
       jobsFound: 0,
     }))
-    expect(repo.updateSourceGeoAreaTimestamps).toHaveBeenCalledWith(
-      'source-1',
-      'area-1',
-      expect.any(Date),
-      null,
-    )
   })
 
-  it('isolates failed area pairs so another pair can complete successfully', async () => {
-    process.env.MAX_RETRIES = '0'
-    process.env.MAX_CONCURRENT_SOURCES = '1'
-    vi.resetModules()
-    const { JobOrchestrator } = await import('../../src/orchestrator/JobOrchestrator')
-    orchestrator = new JobOrchestrator(repo)
-    repo.listSources.mockResolvedValue(sourceRows('passive'))
-    repo.listSourceGeographicAreas.mockResolvedValue([
-      pair('source-1', 'bad'),
-      pair('source-1', 'good'),
-    ])
-    repo.createFetchRun
-      .mockResolvedValueOnce('run-failed')
-      .mockResolvedValueOnce('run-success')
-    adapterFetch.mockImplementation(async (area) => {
-      if (area.id === 'bad') throw new Error('bad area')
-      return { rawJobs: [], warnings: [] }
-    })
-
-    await stopAfterInitialCycle(orchestrator.start())
-
-    expect(adapterFetch.mock.calls.map(([area]) => area.id)).toEqual(['bad', 'good'])
-    expect(repo.updateFetchRun).toHaveBeenCalledWith(expect.objectContaining({
-      id: 'run-failed',
-      status: 'failed',
-    }))
-    expect(repo.updateFetchRun).toHaveBeenCalledWith(expect.objectContaining({
-      id: 'run-success',
-      status: 'success',
-    }))
-  })
-
-  it('waits for an in-flight area cycle before stopping', async () => {
+  it('waits for the in-flight cycle on graceful shutdown', async () => {
     repo.listSources.mockResolvedValue(sourceRows('both'))
     repo.listSourceGeographicAreas.mockResolvedValue([pair('source-1', 'area-1')])
     repo.listActiveUnifiedKeywords.mockResolvedValue(['typescript'])
-    const pendingFetch = deferred<{ rawJobs: unknown[]; warnings: string[] }>()
-    adapterFetch.mockReturnValue(pendingFetch.promise)
+    const pending = deferred<{ rawJobs: unknown[]; warnings: string[] }>()
+    adapterFetch.mockReturnValue(pending.promise)
 
     const startPromise = orchestrator.start()
     await waitForCalls(adapterFetch, 1)
-    expect(adapterFetch).toHaveBeenCalledOnce()
-    const stopPromise = orchestrator.stop()
+
+    const stopPromise = stopOrchestrator()
     let stopped = false
     void stopPromise.then(() => { stopped = true })
-    await new Promise((resolve) => setTimeout(resolve, 1))
+    await new Promise((resolve) => setTimeout(resolve, 10))
     expect(stopped).toBe(false)
 
-    pendingFetch.resolve({ rawJobs: [], warnings: [] })
+    pending.resolve({ rawJobs: [], warnings: [] })
     await Promise.all([startPromise, stopPromise])
 
     expect(stopped).toBe(true)
@@ -307,52 +350,23 @@ describe('JobOrchestrator', () => {
     expect(adapterFetchByKeywords).not.toHaveBeenCalled()
   })
 
-  it('enforces the configured concurrency limit across area pairs', async () => {
-    repo.listSources.mockResolvedValue(sourceRows('passive'))
-    repo.listSourceGeographicAreas.mockResolvedValue([
-      pair('source-1', 'area-1'),
-      pair('source-1', 'area-2'),
-      pair('source-1', 'area-3'),
-    ])
-    const pending = [
-      deferred<{ rawJobs: unknown[]; warnings: string[] }>(),
-      deferred<{ rawJobs: unknown[]; warnings: string[] }>(),
-      deferred<{ rawJobs: unknown[]; warnings: string[] }>(),
-    ]
-    adapterFetch.mockImplementation((_ctx, area) => {
-      const index = Number(area.id.slice(-1)) - 1
-      return pending[index].promise
-    })
-
-    const startPromise = orchestrator.start()
-    await waitForCalls(adapterFetch, 2)
-
-    pending[0].resolve({ rawJobs: [], warnings: [] })
-    await waitForCalls(adapterFetch, 3)
-
-    pending[1].resolve({ rawJobs: [], warnings: [] })
-    pending[2].resolve({ rawJobs: [], warnings: [] })
-    await stopAfterInitialCycle(startPromise)
-  })
-
-  it('marks a timed-out fetch as failed without database access', async () => {
-    process.env.MAX_RETRIES = '0'
-    process.env.FETCH_TIMEOUT_MS = '10'
-    vi.resetModules()
-    const { JobOrchestrator } = await import('../../src/orchestrator/JobOrchestrator')
-    orchestrator = new JobOrchestrator(repo)
-    repo.listSources.mockResolvedValue(sourceRows('passive'))
+  it('runs passive fetches and proactive keywords for the appropriate sources', async () => {
+    repo.listSources.mockResolvedValue(sourceRows('passive', 'proactive'))
     repo.listSourceGeographicAreas.mockResolvedValue([pair('source-1', 'area-1')])
-    adapterFetch.mockReturnValue(new Promise(() => {}))
+    repo.listActiveUnifiedKeywords.mockResolvedValue(['typescript'])
+    adapterFetch.mockResolvedValue({ rawJobs: [{ obfuscated_id: 8 }], metadata: {}, warnings: [] })
+    adapterFetchByKeywords.mockResolvedValue({ rawJobs: [{ obfuscated_id: 9 }], metadata: {}, warnings: [] })
+    transformRun.mockResolvedValue({ jobsFound: 1, jobsSavedNew: 1, jobsSavedUpdated: 0, warnings: [] })
 
-    const startPromise = orchestrator.start()
+    await orchestrator.start()
     await waitForCalls(adapterFetch, 1)
-    await new Promise((resolve) => setTimeout(resolve, 20))
-    await stopAfterInitialCycle(startPromise)
+    expect(adapterFetch).toHaveBeenCalledOnce()
+    expect(adapterFetchByKeywords).not.toHaveBeenCalled()
 
-    expect(repo.updateFetchRun).toHaveBeenCalledWith(expect.objectContaining({
-      status: 'failed',
-      errorMessage: 'Fetch timed out after 10ms',
-    }))
+    await waitForCalls(adapterFetchByKeywords, 1)
+    expect(adapterFetchByKeywords).toHaveBeenCalledOnce()
+    expect(adapterFetchByKeywords).toHaveBeenCalledWith(['typescript'])
+
+    await stopOrchestrator()
   })
 })

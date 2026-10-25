@@ -4,21 +4,43 @@ import { getConfig } from '../config'
 import { createRateLimiter } from '../utils/rate-limiter'
 import type { GeographicArea, JobSourceContext, SourceConfig } from '../sources/base/JobSource'
 
-interface RunningCycle {
-  key: string
+type WorkItemKind = 'passive' | 'proactive'
+
+interface WorkItem {
+  kind: WorkItemKind
   sourceId: string
-  areaId: string
-  promise: Promise<void>
+  areaId?: string
+  keywords?: string[]
+  id: string
+  pair?: {
+    source_id: string
+    source_name: string
+    geographic_area_id: string
+    area_name: string
+    area_definition: Record<string, unknown>
+  }
+}
+
+interface Deferral {
+  until: number
+  failures: number
+}
+
+interface BackoffState {
+  failures: number
 }
 
 export class JobOrchestrator {
   private repo: JobRepository
   private config = getConfig()
-  private runningCycles = new Map<string, RunningCycle>()
+  private runningCycles = new Map<string, { key: string; sourceId: string; areaId: string; promise: Promise<void> }>()
   private stop$ = false
   private interval: ReturnType<typeof setInterval> | null = null
   private sources = new Map<string, SourceConfig>()
   private rateLimiters = new Map<string, ReturnType<typeof createRateLimiter>>()
+  private deferrals = new Map<string, Deferral>()
+  private backoff = new Map<string, BackoffState>()
+  private rrIndex = 0
 
   constructor(repo?: JobRepository) {
     this.repo = repo ?? new JobRepository()
@@ -34,18 +56,26 @@ export class JobOrchestrator {
       stalledThresholdMs: this.config.stalledThresholdMs,
     })
 
-    // Main poll loop: run immediately, then every POLL_INTERVAL_MS
-    await this.runCycle()
+    // MAX_CONCURRENT_SOURCES is accepted-but-ignored: the scheduler is serialized
+    // to a single active item. Log it as deprecated so operators are aware.
+    logger.warn('MAX_CONCURRENT_SOURCES is deprecated and ignored; scheduler runs one work item at a time', {
+      maxConcurrentSources: this.config.maxConcurrentSources,
+    })
+
+    // Main poll loop: run one work item immediately, then one per POLL_INTERVAL_MS tick.
+    if (!this.stop$) await this.tick()
     if (this.stop$) return
 
-    this.interval = setInterval(async () => {
+    this.interval = setInterval(() => {
       if (this.stop$) {
-        if (this.interval) clearInterval(this.interval)
-        this.interval = null
+        if (this.interval) {
+          clearInterval(this.interval)
+          this.interval = null
+        }
         return
       }
-      await this.runCycle().catch((err) => {
-        logger.error('Orchestrator cycle error', err)
+      void this.tick().catch((err) => {
+        logger.error('Orchestrator tick error', err)
       })
     }, this.config.pollIntervalMs)
 
@@ -61,7 +91,7 @@ export class JobOrchestrator {
       this.interval = null
     }
 
-    // Await in-flight cycles with a bounded wait
+    // Await the single in-flight cycle on graceful shutdown
     if (this.runningCycles.size > 0) {
       logger.info(`Awaiting ${this.runningCycles.size} in-flight cycle(s)`, {
         cycleKeys: Array.from(this.runningCycles.keys()),
@@ -72,214 +102,143 @@ export class JobOrchestrator {
     logger.info('Orchestrator stopped')
   }
 
-  private async runCycle(): Promise<void> {
-    // ── Passive cycle: (source, area) pairs ──
-    await this.runPassiveCycle()
+  /** One scheduler tick: if idle, select exactly one eligible work item and run it. */
+  private async tick(): Promise<void> {
     if (this.stop$) return
+    // Never overlap: skip tick if a cycle is in flight (no queuing, no catch-up).
+    if (this.runningCycles.size > 0) return
 
-    // ── Proactive cycle: unified user keywords ──
-    await this.runProactiveCycle().catch((err) => {
-      logger.error('Proactive cycle error', err)
-    })
+    const items = await this.buildWorkItems()
+    if (items.length === 0) return
+
+    const now = Date.now()
+    // Round-robin: walk from the cursor until we find a non-deferred item.
+    for (let i = 0; i < items.length; i++) {
+      const idx = (this.rrIndex + i) % items.length
+      this.rrIndex = (idx + 1) % items.length
+      const item = items[idx]
+      const deferral = this.deferrals.get(item.id)
+      if (deferral && deferral.until > now) continue // still deferred
+      if (deferral) this.deferrals.delete(item.id) // expired
+      await this.runWorkItem(item)
+      return
+    }
+    // Every eligible item is currently deferred; nothing to do this tick.
   }
 
-  private async runPassiveCycle(): Promise<void> {
-    const sources = await this.loadSources().then((rows) =>
-      rows.filter((s) => s.working_mode === 'passive' || s.working_mode === 'both')
-    )
-    if (sources.length === 0) {
-      logger.debug('No enabled passive sources found, skipping passive cycle')
-      return
-    }
-
-    const pairs = await this.repo.listSourceGeographicAreas()
-    if (pairs.length === 0) {
-      logger.debug('No enabled source-geographic-area pairs found, skipping passive cycle')
-      return
-    }
-
-    const passiveSourceIds = new Set(sources.map((source) => source.id))
-    const relevantPairs = pairs.filter((pair) => passiveSourceIds.has(pair.source_id))
-
-    if (relevantPairs.length === 0) {
-      logger.debug('No relevant source-area pairs for this cycle')
-      return
-    }
-
-    // Respect concurrency limit
-    const semaphore = new Semaphore(this.config.maxConcurrentSources)
-
-    const tasks = relevantPairs.map((pair) =>
-      semaphore.acquire().then(() =>
-        this.runPairCycle(pair).finally(() => semaphore.release())
-      )
-    )
-
-    await Promise.allSettled(tasks)
-  }
-
-  private async runProactiveCycle(): Promise<void> {
-    const keywords = await this.repo.listActiveUnifiedKeywords()
-    if (keywords.length === 0) {
-      logger.debug('No active user keywords found, skipping proactive cycle')
-      return
-    }
-
-    logger.info(`Starting proactive cycle with ${keywords.length} unified keyword(s)`, { keywords })
+  private async buildWorkItems(): Promise<WorkItem[]> {
+    const items: WorkItem[] = []
 
     const sources = await this.loadSources()
-    if (sources.length === 0) {
-      logger.debug('No enabled sources found, skipping proactive cycle')
-      return
+    if (this.stop$) return items
+
+    // Passive: one item per (source, geographic area) pair.
+    const passiveSources = sources.filter(
+      (s) => s.working_mode === 'passive' || s.working_mode === 'both'
+    )
+    const passiveSourceIds = new Set(passiveSources.map((s) => s.id))
+    const pairs = await this.repo.listSourceGeographicAreas()
+    const relevantPairs = pairs.filter((pair) => passiveSourceIds.has(pair.source_id))
+
+    for (const pair of relevantPairs) {
+      items.push({
+        kind: 'passive',
+        sourceId: pair.source_id,
+        areaId: pair.geographic_area_id,
+        id: `passive:${pair.source_id}:${pair.geographic_area_id}`,
+        pair,
+      })
     }
 
+    // Proactive: one item per proactive-enabled source (batched keywords).
+    const keywords = await this.repo.listActiveUnifiedKeywords()
+    if (this.stop$) return items
     const proactiveSources = sources.filter(
       (s) => s.working_mode === 'proactive' || s.working_mode === 'both'
     )
-    if (proactiveSources.length === 0) {
-      logger.debug('No enabled proactive sources found, skipping proactive cycle')
-      return
+    for (const source of proactiveSources) {
+      items.push({
+        kind: 'proactive',
+        sourceId: source.id,
+        keywords,
+        id: `proactive:${source.id}`,
+      })
     }
 
-    const semaphore = new Semaphore(this.config.maxConcurrentSources)
-
-    const tasks = proactiveSources.map((source) =>
-      semaphore.acquire().then(() =>
-        this.runProactiveSourceCycle(source, keywords).finally(() => semaphore.release())
-      )
-    )
-
-    await Promise.allSettled(tasks)
+    return items
   }
 
-  private async runProactiveSourceCycle(source: SourceConfig, keywords: string[]): Promise<void> {
-    const cycleKey = `proactive:${source.id}`
+  /** Run one work item under the single-active-cycle guard. */
+  private async runWorkItem(item: WorkItem): Promise<void> {
+    const key = item.id
+    const ctx = this.buildCtx(item)
 
-    // Skip if already running
-    if (this.runningCycles.has(cycleKey)) {
-      logger.debug(`Proactive cycle already running for ${source.id}, skipping`)
-      return
-    }
+    const cyclePromise =
+      item.kind === 'passive'
+        ? this.runPairCycle(item.pair!, ctx)
+        : this.runProactiveSourceCycle(this.sources.get(item.sourceId)!, item.keywords ?? [], ctx)
 
-    const clock = () => new Date()
-    const now = clock()
-    const loggerChild = this.childLogger(source.id, 'proactive')
-    const rateLimiter = this.getRateLimiter(source)
-
-    const ctx: JobSourceContext = {
-      source,
-      logger: loggerChild,
-      rateLimiter,
-      clock,
-    }
-
-    // Create fetch_runs row (running)
-    const fetchRunId = await this.repo.createFetchRun({
-      sourceId: source.id,
-      status: 'running',
-      startedAt: now,
+    this.runningCycles.set(key, {
+      key,
+      sourceId: item.sourceId,
+      areaId: item.areaId ?? '',
+      promise: cyclePromise,
     })
-
-    logger.info(`Starting proactive fetch cycle for ${source.name}`, {
-      fetchRunId,
-      source: source.id,
-      keywords,
-    })
-
-    const startTime = Date.now()
-    let result: any
-    let attempts = 0
-    const maxRetries = this.config.maxRetries
-    const retryDelay = this.config.retryDelayMs
-    const fetchTimeout = this.config.fetchTimeoutMs
-
-    while (attempts <= maxRetries) {
-      attempts++
-
-      try {
-        result = await this.withTimeout(
-          this.fetchFromAdapterByKeywords(ctx, keywords),
-          fetchTimeout,
-        )
-
-        break
-      } catch (err) {
-        const error = err as Error
-        logger.error(`Proactive fetch attempt ${attempts}/${maxRetries + 1} failed for ${source.name}`, {
-          fetchRunId,
-          error: error.message,
-        })
-
-        if (attempts <= maxRetries) {
-          await this.sleep(retryDelay)
-        } else {
-          await this.repo.updateFetchRun({
-            id: fetchRunId,
-            status: 'failed',
-            finishedAt: new Date(),
-            errorMessage: error.message,
-            jobsFound: 0,
-            jobsSavedNew: 0,
-            jobsSavedUpdated: 0,
-          })
-          await this.repo.updateSourceTimestamps(source.id, now, null)
-          logger.error(`Proactive cycle failed for ${source.name} after ${maxRetries + 1} attempts`, {
-            fetchRunId,
-            error: error.message,
-          })
-          return
-        }
-      }
-    }
-
-    // Transform + persist via Transform Engine
-    const rawJobs: unknown[] = result?.rawJobs ?? []
-    const transformWarnings: string[] = result?.warnings ?? []
-
-    let jobsFound = rawJobs.length
-    let jobsSavedNew = 0
-    let jobsSavedUpdated = 0
 
     try {
-      const { TransformEngine } = await import('../transform/engine')
-      const transformConfig = await import('../transform/rezi.transform.json')
-      const engine = new TransformEngine(this.repo, transformConfig as any, source.id, loggerChild)
-      const transformResult = await engine.run(rawJobs)
-
-      jobsFound = transformResult.jobsFound
-      jobsSavedNew = transformResult.jobsSavedNew
-      jobsSavedUpdated = transformResult.jobsSavedUpdated
-      transformWarnings.push(...transformResult.warnings)
+      await cyclePromise
+      // Success clears any backoff/deferral for this item.
+      this.deferrals.delete(key)
+      this.backoff.delete(key)
     } catch (err) {
-      const error = err as Error
-      logger.error(`Transform engine failed for ${source.name} (proactive)`, {
-        fetchRunId,
-        error: error.message,
-      })
-      transformWarnings.push(`Transform engine error: ${error.message}`)
+      await this.handleItemFailure(key, err)
+    } finally {
+      this.runningCycles.delete(key)
     }
+  }
 
-    await this.repo.updateFetchRun({
-      id: fetchRunId,
-      status: 'success',
-      finishedAt: new Date(),
-      jobsFound,
-      jobsSavedNew,
-      jobsSavedUpdated,
-      metadata: result?.metadata ?? {},
-      warnings: transformWarnings,
+  private buildCtx(item: WorkItem): JobSourceContext {
+    const source = this.sources.get(item.sourceId)
+    if (!source) throw new Error(`Source ${item.sourceId} not found in config`)
+    const clock = () => new Date()
+    const loggerChild = this.childLogger(item.sourceId, item.areaId ?? '')
+    const rateLimiter = this.getRateLimiter(source)
+    return { source, logger: loggerChild, rateLimiter, clock }
+  }
+
+  private async handleItemFailure(key: string, err: unknown): Promise<void> {
+    const error = err as Error
+    const failures = (this.backoff.get(key)?.failures ?? 0) + 1
+    this.backoff.set(key, { failures })
+
+    const retryAfterMs = this.extractRetryAfterMs(error)
+    const backoffMs = this.backoffDelayMs(failures)
+    const deferMs = retryAfterMs != null ? Math.max(retryAfterMs, backoffMs) : backoffMs
+
+    this.deferrals.set(key, { until: Date.now() + deferMs, failures })
+
+    logger.warn(`Work item deferred after failure`, {
+      item: key,
+      failures,
+      deferMs,
+      retryAfterMs,
+      backoffMs,
+      error: error.message,
     })
+  }
 
-    await this.repo.updateSourceTimestamps(source.id, new Date(), null)
+  private backoffDelayMs(failures: number): number {
+    const exp = Math.min(failures - 1, 6)
+    const base = this.config.retryDelayMs * Math.pow(2, exp)
+    const jitter = Math.floor(Math.random() * base)
+    return Math.min(base + jitter, this.config.fetchTimeoutMs)
+  }
 
-    const duration = Date.now() - startTime
-    logger.info(`Proactive fetch cycle completed for ${source.name}`, {
-      fetchRunId,
-      jobsFound,
-      jobsSavedNew,
-      jobsSavedUpdated,
-      durationMs: duration,
-    })
+  private extractRetryAfterMs(err: Error): number | null {
+    const e = err as { retryAfterMs?: number; retryAfter?: number }
+    if (typeof e.retryAfterMs === 'number' && e.retryAfterMs > 0) return e.retryAfterMs
+    if (typeof e.retryAfter === 'number' && e.retryAfter > 0) return e.retryAfter * 1000
+    return null
   }
 
   private async runPairCycle(pair: {
@@ -288,55 +247,14 @@ export class JobOrchestrator {
     geographic_area_id: string
     area_name: string
     area_definition: Record<string, unknown>
-  }): Promise<void> {
+  }, ctx: JobSourceContext): Promise<void> {
     const cycleKey = `${pair.source_id}:${pair.geographic_area_id}`
-
-    // Skip if already running for this pair
-    if (this.runningCycles.has(cycleKey)) {
-      logger.debug(`Cycle already running for ${cycleKey}, skipping`)
-      return
-    }
-
     const source = this.sources.get(pair.source_id)
     if (!source) {
       logger.error(`Source ${pair.source_id} not found in config`)
       return
     }
 
-    const clock = () => new Date()
-    const loggerChild = this.childLogger(pair.source_id, pair.geographic_area_id)
-    const rateLimiter = this.getRateLimiter(source)
-
-    const ctx: JobSourceContext = {
-      source,
-      logger: loggerChild,
-      rateLimiter,
-      clock,
-    }
-
-    const cyclePromise = this.executeCycle(pair, ctx)
-
-    this.runningCycles.set(cycleKey, {
-      key: cycleKey,
-      sourceId: pair.source_id,
-      areaId: pair.geographic_area_id,
-      promise: cyclePromise,
-    })
-
-    try {
-      await cyclePromise
-    } finally {
-      this.runningCycles.delete(cycleKey)
-    }
-  }
-
-  private async executeCycle(pair: {
-    source_id: string
-    source_name: string
-    geographic_area_id: string
-    area_name: string
-    area_definition: Record<string, unknown>
-  }, ctx: JobSourceContext): Promise<void> {
     const startTime = Date.now()
     const now = ctx.clock()
 
@@ -370,7 +288,6 @@ export class JobOrchestrator {
 
       try {
         result = await this.withTimeout(this.fetchFromAdapter(ctx, area), fetchTimeout)
-
         break
       } catch (err) {
         const error = err as Error
@@ -402,7 +319,7 @@ export class JobOrchestrator {
             fetchRunId,
             error: error.message,
           })
-          return
+          throw error
         }
       }
     }
@@ -418,7 +335,7 @@ export class JobOrchestrator {
     try {
       const { TransformEngine } = await import('../transform/engine')
       const transformConfig = await import('../transform/rezi.transform.json')
-      const engine = new TransformEngine(this.repo, transformConfig as any, pair.source_id, logger)
+      const engine = new TransformEngine(this.repo, transformConfig as any, pair.source_id, ctx.logger)
       const transformResult = await engine.run(rawJobs)
 
       jobsFound = transformResult.jobsFound
@@ -456,6 +373,120 @@ export class JobOrchestrator {
 
     const duration = Date.now() - startTime
     logger.info(`Fetch cycle completed for ${pair.source_name} / ${pair.area_name}`, {
+      fetchRunId,
+      jobsFound,
+      jobsSavedNew,
+      jobsSavedUpdated,
+      durationMs: duration,
+    })
+  }
+
+  private async runProactiveSourceCycle(source: SourceConfig, keywords: string[], ctx: JobSourceContext): Promise<void> {
+    const cycleKey = `proactive:${source.id}`
+
+    const clock = () => new Date()
+    const now = clock()
+
+    // Create fetch_runs row (running)
+    const fetchRunId = await this.repo.createFetchRun({
+      sourceId: source.id,
+      status: 'running',
+      startedAt: now,
+    })
+
+    logger.info(`Starting proactive fetch cycle for ${source.name}`, {
+      fetchRunId,
+      source: source.id,
+      keywords,
+    })
+
+    const startTime = Date.now()
+    let result: any
+    let attempts = 0
+    const maxRetries = this.config.maxRetries
+    const retryDelay = this.config.retryDelayMs
+    const fetchTimeout = this.config.fetchTimeoutMs
+
+    while (attempts <= maxRetries) {
+      attempts++
+
+      try {
+        result = await this.withTimeout(
+          this.fetchFromAdapterByKeywords(ctx, keywords),
+          fetchTimeout,
+        )
+        break
+      } catch (err) {
+        const error = err as Error
+        logger.error(`Proactive fetch attempt ${attempts}/${maxRetries + 1} failed for ${source.name}`, {
+          fetchRunId,
+          error: error.message,
+        })
+
+        if (attempts <= maxRetries) {
+          await this.sleep(retryDelay)
+        } else {
+          await this.repo.updateFetchRun({
+            id: fetchRunId,
+            status: 'failed',
+            finishedAt: new Date(),
+            errorMessage: error.message,
+            jobsFound: 0,
+            jobsSavedNew: 0,
+            jobsSavedUpdated: 0,
+          })
+          await this.repo.updateSourceTimestamps(source.id, now, null)
+          logger.error(`Proactive cycle failed for ${source.name} after ${maxRetries + 1} attempts`, {
+            fetchRunId,
+            error: error.message,
+          })
+          throw error
+        }
+      }
+    }
+
+    // Transform + persist via Transform Engine
+    const rawJobs: unknown[] = result?.rawJobs ?? []
+    const transformWarnings: string[] = result?.warnings ?? []
+
+    let jobsFound = rawJobs.length
+    let jobsSavedNew = 0
+    let jobsSavedUpdated = 0
+
+    try {
+      const { TransformEngine } = await import('../transform/engine')
+      const transformConfig = await import('../transform/rezi.transform.json')
+      const engine = new TransformEngine(this.repo, transformConfig as any, source.id, ctx.logger)
+      const transformResult = await engine.run(rawJobs)
+
+      jobsFound = transformResult.jobsFound
+      jobsSavedNew = transformResult.jobsSavedNew
+      jobsSavedUpdated = transformResult.jobsSavedUpdated
+      transformWarnings.push(...transformResult.warnings)
+    } catch (err) {
+      const error = err as Error
+      logger.error(`Transform engine failed for ${source.name} (proactive)`, {
+        fetchRunId,
+        error: error.message,
+      })
+      transformWarnings.push(`Transform engine error: ${error.message}`)
+    }
+
+    await this.repo.updateFetchRun({
+      id: fetchRunId,
+      status: 'success',
+      finishedAt: new Date(),
+      jobsFound,
+      jobsSavedNew,
+      jobsSavedUpdated,
+      metadata: result?.metadata ?? {},
+      warnings: transformWarnings,
+    })
+
+    await this.repo.updateSourceTimestamps(source.id, new Date(), null)
+
+    const duration = Date.now() - startTime
+    logger.info(`Proactive fetch cycle completed for ${source.name}`, {
       fetchRunId,
       jobsFound,
       jobsSavedNew,
@@ -556,34 +587,6 @@ export class JobOrchestrator {
       return await Promise.race([promise, timeoutPromise])
     } finally {
       if (timeout) clearTimeout(timeout)
-    }
-  }
-}
-
-class Semaphore {
-  private permits: number
-  private queue: Array<() => void> = []
-
-  constructor(concurrency: number) {
-    this.permits = Math.max(1, concurrency)
-  }
-
-  acquire(): Promise<void> {
-    if (this.permits > 0) {
-      this.permits--
-      return Promise.resolve()
-    }
-    return new Promise<void>((resolve) => {
-      this.queue.push(resolve)
-    })
-  }
-
-  release(): void {
-    if (this.queue.length > 0) {
-      const resolve = this.queue.shift()!
-      resolve()
-    } else {
-      this.permits++
     }
   }
 }
