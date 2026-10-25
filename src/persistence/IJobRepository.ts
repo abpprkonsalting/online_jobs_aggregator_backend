@@ -172,7 +172,13 @@ export interface IJobRepository {
   upsertSource(data: SourceData): Promise<void>
   deleteSource(id: string): Promise<void>
   updateSourceTimestamps(sourceId: string, lastRunAt: Date, nextRunAt: Date | null): Promise<void>
-  listSourceGeographicAreas(): Promise<Array<{ source_id: string; geographic_area_id: string }>>
+  listSourceGeographicAreas(): Promise<Array<{
+    source_id: string
+    source_name: string
+    geographic_area_id: string
+    area_name: string
+    area_definition: Record<string, unknown>
+  }>>
   updateSourceGeoAreaTimestamps(sourceId: string, areaId: string, lastRunAt: Date, nextRunAt: Date | null): Promise<void>
 
   // Geographic areas
