@@ -202,6 +202,30 @@ export async function ensureDatabase(): Promise<void> {
   if (existingCols.length === 0) {
     await query(`ALTER TABLE sources ADD COLUMN working_mode ENUM('passive','proactive','both') NOT NULL DEFAULT 'both' AFTER type`)
   }
+
+  // Add measured indexes for query performance (idempotent)
+  const indexDefinitions: Array<{ table: string; name: string; columns: string }> = [
+    // fetch_runs: admin list with source_id filter + created_at ordering
+    { table: 'fetch_runs', name: 'idx_fetch_runs_source_created', columns: 'source_id, created_at DESC' },
+    { table: 'fetch_runs', name: 'idx_fetch_runs_created', columns: 'created_at DESC' },
+    // jobs: organization filter (idx_org_remote is composite, may not be used for organization alone)
+    { table: 'jobs', name: 'idx_jobs_organization', columns: 'organization' },
+    // jobs: salary range filters
+    { table: 'jobs', name: 'idx_jobs_salary_min', columns: 'salary_min' },
+    { table: 'jobs', name: 'idx_jobs_salary_max', columns: 'salary_max' },
+    // jobs: allow_remote filter (idx_org_remote is composite)
+    { table: 'jobs', name: 'idx_jobs_allow_remote', columns: 'allow_remote' },
+  ]
+
+  for (const idx of indexDefinitions) {
+    const existingIdx = await query<any>(`
+      SELECT INDEX_NAME FROM information_schema.STATISTICS
+      WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND INDEX_NAME = ?
+    `, [idx.table, idx.name])
+    if (existingIdx.length === 0) {
+      await query(`ALTER TABLE \`${idx.table}\` ADD INDEX \`${idx.name}\` (${idx.columns})`)
+    }
+  }
 }
 
 export async function seedAdminUser(

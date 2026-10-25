@@ -50,6 +50,7 @@ interface Config {
   cookieDomain: string
   adminEmail: string
   adminPassword: string
+  dbPoolLimit: number
 }
 
 let cachedConfig: Config | null = null
@@ -81,6 +82,7 @@ export function getConfig(): Config {
     cookieDomain: process.env.COOKIE_DOMAIN ?? '',
     adminEmail: required('ADMIN_EMAIL'),
     adminPassword: required('ADMIN_PASSWORD'),
+    dbPoolLimit: num('DB_POOL_LIMIT', 10),
   }
   return cachedConfig
 }

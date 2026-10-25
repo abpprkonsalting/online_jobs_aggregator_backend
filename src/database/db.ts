@@ -9,8 +9,8 @@ export function getPool(): Pool {
     pool = createPool({
       uri: config.databaseUrl,
       waitForConnections: true,
-      connectionLimit: 10,
-      maxIdle: 5,
+      connectionLimit: config.dbPoolLimit,
+      maxIdle: Math.min(5, config.dbPoolLimit),
       idleTimeout: 60000,
       enableKeepAlive: true,
       keepAliveInitialDelay: 10000,
