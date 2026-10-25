@@ -1,5 +1,5 @@
 import { RowDataPacket } from 'mysql2/promise'
-import { query, execute } from '../database/db'
+import { query, execute, transaction } from '../database/db'
 
 export class JobRepository {
   async getUserByEmail(email: string): Promise<any | null> {
@@ -283,10 +283,11 @@ export class JobRepository {
     posted_at?: Date | null
     raw_data?: Record<string, unknown> | null
     fetched_at?: Date | null
+    content_hash?: string | null
   }): Promise<{ id: string; isNew: boolean }> {
     const now = new Date()
     const existing = await query<any>(
-      `SELECT id FROM jobs WHERE source_id = ? AND external_id = ?`,
+      `SELECT id, content_hash FROM jobs WHERE source_id = ? AND external_id = ?`,
       [data.source_id, data.external_id]
     )
 
@@ -307,24 +308,31 @@ export class JobRepository {
       data.posted_at ?? null,
       data.raw_data ? JSON.stringify(data.raw_data) : null,
       data.fetched_at ?? now,
+      data.content_hash ?? null,
       now,
       now,
     ]
 
     if (existing.length > 0) {
+      const existingHash = existing[0].content_hash
+      // No-op detection: if content unchanged and hash provided, skip update entirely
+      if (data.content_hash !== undefined && existingHash !== null && existingHash === data.content_hash) {
+        return { id: existing[0].id, isNew: false }
+      }
+
       await execute(
         `UPDATE jobs
          SET title = ?, organization = ?, job_url = ?, description_text = ?,
              allow_remote = ?, salary_min = ?, salary_max = ?, salary_currency = ?,
              salary_unit = ?, date_posted = ?, posted_at = ?, raw_data = ?,
-             fetched_at = ?, updated_at = ?
+             fetched_at = ?, content_hash = ?, updated_at = now()
          WHERE id = ?`,
         [
           data.title, data.organization ?? null, data.job_url, data.description_text ?? null,
           data.allow_remote ?? null, data.salary_min ?? null, data.salary_max ?? null,
           data.salary_currency ?? null, data.salary_unit ?? null, data.date_posted ?? null,
           data.posted_at ?? null, data.raw_data ? JSON.stringify(data.raw_data) : null,
-          data.fetched_at ?? now, now, existing[0].id,
+          data.fetched_at ?? now, data.content_hash ?? null, existing[0].id,
         ]
       )
       return { id: existing[0].id, isNew: false }
@@ -332,37 +340,186 @@ export class JobRepository {
 
     await execute(
       `INSERT INTO jobs (id, source_id, external_id, title, organization, job_url, description_text,
-       allow_remote, salary_min, salary_max, salary_currency, salary_unit, date_posted, posted_at,
-       raw_data, fetched_at, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      params
+         allow_remote, salary_min, salary_max, salary_currency, salary_unit, date_posted, posted_at,
+         raw_data, fetched_at, content_hash, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        data.id, data.source_id, data.external_id, data.title, data.organization ?? null,
+        data.job_url, data.description_text ?? null, data.allow_remote ?? null,
+        data.salary_min ?? null, data.salary_max ?? null, data.salary_currency ?? null,
+        data.salary_unit ?? null, data.date_posted ?? null, data.posted_at ?? null,
+        data.raw_data ? JSON.stringify(data.raw_data) : null, data.fetched_at ?? now,
+        data.content_hash ?? null, now, now,
+      ]
     )
     return { id: data.id, isNew: true }
+  }
+
+  async upsertJobsBatch(data: Array<{
+    id: string
+    source_id: string
+    external_id: string
+    title: string
+    organization?: string | null
+    job_url: string
+    description_text?: string | null
+    allow_remote?: boolean | null
+    salary_min?: number | null
+    salary_max?: number | null
+    salary_currency?: string | null
+    salary_unit?: string | null
+    date_posted?: Date | null
+    posted_at?: Date | null
+    raw_data?: Record<string, unknown> | null
+    fetched_at?: Date | null
+    content_hash?: string | null
+  }>): Promise<{ jobsNew: number; jobsUpdated: number; jobIds: Map<string, string> }> {
+    const now = new Date()
+    const jobIds = new Map<string, string>()
+    let jobsNew = 0
+    let jobsUpdated = 0
+
+    if (data.length === 0) {
+      return { jobsNew: 0, jobsUpdated: 0, jobIds }
+    }
+
+    // Pre-fetch existing jobs for this batch
+    const externalIds = data.map((d) => d.external_id)
+    const placeholders = externalIds.map(() => '?').join(', ')
+    const existing = await query<any>(
+      `SELECT id, source_id, external_id, content_hash FROM jobs WHERE source_id = ? AND external_id IN (${placeholders})`,
+      [data[0].source_id, ...externalIds]
+    )
+    const existingMap = new Map<string, { id: string; content_hash: string | null }>()
+    for (const row of existing) {
+      existingMap.set(row.external_id, { id: row.id, content_hash: row.content_hash })
+    }
+
+    const toInsert: Array<any[]> = []
+    const toUpdate: Array<{ id: string; params: any[] }> = []
+
+    for (const d of data) {
+      const existingRow = existingMap.get(d.external_id)
+      const params = [
+        d.id,
+        d.source_id,
+        d.external_id,
+        d.title,
+        d.organization ?? null,
+        d.job_url,
+        d.description_text ?? null,
+        d.allow_remote ?? null,
+        d.salary_min ?? null,
+        d.salary_max ?? null,
+        d.salary_currency ?? null,
+        d.salary_unit ?? null,
+        d.date_posted ?? null,
+        d.posted_at ?? null,
+        d.raw_data ? JSON.stringify(d.raw_data) : null,
+        d.fetched_at ?? now,
+        d.content_hash ?? null,
+        now,
+        now,
+      ]
+
+      if (existingRow) {
+        jobIds.set(d.external_id, existingRow.id)
+        // No-op detection: skip if content unchanged
+        if (existingRow.content_hash !== null && existingRow.content_hash === d.content_hash) {
+          jobsUpdated++
+          continue
+        }
+        jobsUpdated++
+        toUpdate.push({
+          id: existingRow.id,
+          params: [
+            d.title, d.organization ?? null, d.job_url, d.description_text ?? null,
+            d.allow_remote ?? null, d.salary_min ?? null, d.salary_max ?? null,
+            d.salary_currency ?? null, d.salary_unit ?? null, d.date_posted ?? null,
+            d.posted_at ?? null, d.raw_data ? JSON.stringify(d.raw_data) : null,
+            d.fetched_at ?? now, d.content_hash ?? null, existingRow.id,
+          ],
+        })
+      } else {
+        jobsNew++
+        jobIds.set(d.external_id, d.id)
+        toInsert.push(params)
+      }
+    }
+
+    // Insert new jobs in one batch
+    if (toInsert.length > 0) {
+      const valuePlaceholders = toInsert.map(() => '(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').join(', ')
+      const flatParams = toInsert.flat()
+      await execute(
+        `INSERT INTO jobs (id, source_id, external_id, title, organization, job_url, description_text,
+           allow_remote, salary_min, salary_max, salary_currency, salary_unit, date_posted, posted_at,
+           raw_data, fetched_at, content_hash, created_at, updated_at)
+          VALUES ${valuePlaceholders}`,
+        flatParams
+      )
+    }
+
+    // Update changed jobs
+    for (const upd of toUpdate) {
+      await execute(
+        `UPDATE jobs
+         SET title = ?, organization = ?, job_url = ?, description_text = ?,
+             allow_remote = ?, salary_min = ?, salary_max = ?, salary_currency = ?,
+             salary_unit = ?, date_posted = ?, posted_at = ?, raw_data = ?,
+             fetched_at = ?, content_hash = ?, updated_at = now()
+         WHERE id = ?`,
+        upd.params
+      )
+    }
+
+    return { jobsNew, jobsUpdated, jobIds }
   }
 
   async syncJobSkills(jobId: string, skillIds: string[]): Promise<void> {
     await execute(`DELETE FROM job_skills WHERE job_id = ?`, [jobId])
     if (skillIds.length === 0) return
-    const values = skillIds.map((skillId) => `('${jobId}', '${skillId}')`).join(', ')
-    await execute(`INSERT INTO job_skills (job_id, skill_id) VALUES ${values}`)
+    const values = skillIds.map(() => '(?, ?)').join(', ')
+    const flatParams: unknown[] = []
+    for (const skillId of skillIds) {
+      flatParams.push(jobId, skillId)
+    }
+    await execute(`INSERT INTO job_skills (job_id, skill_id) VALUES ${values}`, flatParams)
   }
 
   async syncJobCategories(jobId: string, categoryPairs: Array<{ category_id: string; classification_confidence?: number | null }>): Promise<void> {
     await execute(`DELETE FROM job_categories WHERE job_id = ?`, [jobId])
     if (categoryPairs.length === 0) return
-    const values = categoryPairs
-      .map((p) => `('${jobId}', '${p.category_id}', ${p.classification_confidence ?? 'NULL'})`)
-      .join(', ')
-    await execute(`INSERT INTO job_categories (job_id, category_id, classification_confidence) VALUES ${values}`)
+    const values = categoryPairs.map(() => '(?, ?, ?)').join(', ')
+    const flatParams: unknown[] = []
+    for (const p of categoryPairs) {
+      flatParams.push(jobId, p.category_id, p.classification_confidence ?? null)
+    }
+    await execute(`INSERT INTO job_categories (job_id, category_id, classification_confidence) VALUES ${values}`, flatParams)
   }
 
   async syncLocations(jobId: string, locations: Array<{ city_id?: string | null; raw_text?: string | null }>): Promise<void> {
     await execute(`DELETE FROM locations WHERE job_id = ?`, [jobId])
     if (locations.length === 0) return
-    const values = locations
-      .map((loc) => `('${crypto.randomUUID()}', '${jobId}', ${loc.city_id ?? 'NULL'}, ${loc.raw_text != null ? `'${String(loc.raw_text).replace(/'/g, "''")}'` : 'NULL'})`)
-      .join(', ')
-    await execute(`INSERT INTO locations (id, job_id, city_id, raw_text, created_at, updated_at) VALUES ${values}`)
+    const values = locations.map(() => '(?, ?, ?, ?, ?, ?)').join(', ')
+    const flatParams: unknown[] = []
+    const now = new Date()
+    for (const loc of locations) {
+      flatParams.push(crypto.randomUUID(), jobId, loc.city_id ?? null, loc.raw_text ?? null, now, now)
+    }
+    await execute(`INSERT INTO locations (id, job_id, city_id, raw_text, created_at, updated_at) VALUES ${values}`, flatParams)
+  }
+
+  async syncJobSkillsBatch(jobId: string, skillIds: string[]): Promise<void> {
+    return this.syncJobSkills(jobId, skillIds)
+  }
+
+  async syncJobCategoriesBatch(jobId: string, categoryPairs: Array<{ category_id: string; classification_confidence?: number | null }>): Promise<void> {
+    return this.syncJobCategories(jobId, categoryPairs)
+  }
+
+  async syncLocationsBatch(jobId: string, locations: Array<{ city_id?: string | null; raw_text?: string | null }>): Promise<void> {
+    return this.syncLocations(jobId, locations)
   }
 
   async getJobWithDetails(jobId: string): Promise<any | null> {
@@ -448,6 +605,66 @@ export class JobRepository {
        VALUES (?, ?, ?, ?, ?)
        ON DUPLICATE KEY UPDATE country_id = VALUES(country_id), name = VALUES(name), updated_at = VALUES(updated_at)`,
       [data.id, data.country_id, data.name, now, now]
+    )
+  }
+
+  async upsertSkillsBatch(data: Array<{ id: string; name: string; slug: string }>): Promise<void> {
+    if (data.length === 0) return
+    const now = new Date()
+    const values = data.map(() => '(?, ?, ?, ?, ?)').join(', ')
+    const flatParams: unknown[] = []
+    for (const d of data) {
+      flatParams.push(d.id, d.name, d.slug, now, now)
+    }
+    await execute(
+      `INSERT INTO skills (id, name, slug, created_at, updated_at) VALUES ${values}
+       ON DUPLICATE KEY UPDATE name = VALUES(name), slug = VALUES(slug), updated_at = VALUES(updated_at)`,
+      flatParams
+    )
+  }
+
+  async upsertCategoriesBatch(data: Array<{ id: string; name: string; slug: string; description: string | null }>): Promise<void> {
+    if (data.length === 0) return
+    const now = new Date()
+    const values = data.map(() => '(?, ?, ?, ?, ?, ?)').join(', ')
+    const flatParams: unknown[] = []
+    for (const d of data) {
+      flatParams.push(d.id, d.name, d.slug, d.description ?? null, now, now)
+    }
+    await execute(
+      `INSERT INTO categories (id, name, slug, description, created_at, updated_at) VALUES ${values}
+       ON DUPLICATE KEY UPDATE name = VALUES(name), slug = VALUES(slug), description = VALUES(description), updated_at = VALUES(updated_at)`,
+      flatParams
+    )
+  }
+
+  async upsertCountriesBatch(data: Array<{ id: string; name: string; code: string | null }>): Promise<void> {
+    if (data.length === 0) return
+    const now = new Date()
+    const values = data.map(() => '(?, ?, ?, ?, ?)').join(', ')
+    const flatParams: unknown[] = []
+    for (const d of data) {
+      flatParams.push(d.id, d.name, d.code ?? null, now, now)
+    }
+    await execute(
+      `INSERT INTO countries (id, name, code, created_at, updated_at) VALUES ${values}
+       ON DUPLICATE KEY UPDATE name = VALUES(name), code = VALUES(code), updated_at = VALUES(updated_at)`,
+      flatParams
+    )
+  }
+
+  async upsertCitiesBatch(data: Array<{ id: string; country_id: string; name: string }>): Promise<void> {
+    if (data.length === 0) return
+    const now = new Date()
+    const values = data.map(() => '(?, ?, ?, ?, ?)').join(', ')
+    const flatParams: unknown[] = []
+    for (const d of data) {
+      flatParams.push(d.id, d.country_id, d.name, now, now)
+    }
+    await execute(
+      `INSERT INTO cities (id, country_id, name, created_at, updated_at) VALUES ${values}
+       ON DUPLICATE KEY UPDATE country_id = VALUES(country_id), name = VALUES(name), updated_at = VALUES(updated_at)`,
+      flatParams
     )
   }
 
@@ -627,6 +844,33 @@ export class JobRepository {
       ORDER BY k.name ASC
     `)
     return rows.map((r: any) => r.keyword)
+  }
+
+  /**
+   * Run a callback inside a MySQL transaction with deadlock retry.
+   * Retries up to maxRetries times on ER_LOCK_DEADLOCK (code 1213).
+   */
+  async transactionWithRetry<T>(
+    fn: (conn: any) => Promise<T>,
+    maxRetries: number = 3
+  ): Promise<T> {
+    let lastError: unknown = null
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        return await transaction(async (conn) => {
+          return fn(conn)
+        })
+      } catch (err: any) {
+        lastError = err
+        const isDeadlock = err?.code === 'ER_LOCK_DEADLOCK' || err?.errno === 1213
+        if (!isDeadlock || attempt === maxRetries) {
+          throw err
+        }
+        // Brief backoff before retrying
+        await new Promise((resolve) => setTimeout(resolve, 50 * (attempt + 1)))
+      }
+    }
+    throw lastError
   }
 }
 
