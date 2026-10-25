@@ -33,7 +33,7 @@ describe('JobRepository persistence contracts', () => {
     await expect(repo.upsertJob(job)).resolves.toEqual({ id: 'existing-job', isNew: false })
 
     expect(query).toHaveBeenCalledWith(
-      'SELECT id FROM jobs WHERE source_id = ? AND external_id = ?',
+      'SELECT id, content_hash FROM jobs WHERE source_id = ? AND external_id = ?',
       ['source-1', 'external-1'],
     )
     expect(execute).toHaveBeenCalledOnce()
