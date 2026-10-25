@@ -1,7 +1,8 @@
 import { RowDataPacket } from 'mysql2/promise'
 import { query, execute, transaction } from '../database/db'
+import type { IJobRepository } from './IJobRepository'
 
-export class JobRepository {
+export class JobRepository implements IJobRepository {
   async getUserByEmail(email: string): Promise<any | null> {
     const rows = await query<any>(`SELECT * FROM users WHERE email = ?`, [email])
     return rows.length ? rows[0] : null
