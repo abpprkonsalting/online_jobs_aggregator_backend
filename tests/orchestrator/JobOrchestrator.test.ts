@@ -82,16 +82,33 @@ async function waitForCalls(mock: ReturnType<typeof vi.fn>, count: number, timeo
 
 describe('JobOrchestrator', () => {
   let repo: JobRepository
-  let orchestrator: InstanceType<(typeof import('../../src/orchestrator/JobOrchestrator'))['JobOrchestrator']>
+
+  async function createOrchestrator(overrides?: {
+    POLL_INTERVAL_MS?: string
+    MAX_RETRIES?: string
+    RETRY_DELAY_MS?: string
+    FETCH_TIMEOUT_MS?: string
+  }) {
+    const env = {
+      POLL_INTERVAL_MS: overrides?.POLL_INTERVAL_MS ?? '5',
+      MAX_RETRIES: overrides?.MAX_RETRIES ?? '1',
+      RETRY_DELAY_MS: overrides?.RETRY_DELAY_MS ?? '5',
+      FETCH_TIMEOUT_MS: overrides?.FETCH_TIMEOUT_MS ?? '100',
+    }
+    for (const [key, value] of Object.entries(env)) {
+      process.env[key] = value
+    }
+
+    vi.resetModules()
+    const { JobOrchestrator } = await import('../../src/orchestrator/JobOrchestrator')
+    return new JobOrchestrator(repo)
+  }
+
+  async function stopOrchestrator(orchestrator: InstanceType<(typeof import('../../src/orchestrator/JobOrchestrator'))['JobOrchestrator']>) {
+    await orchestrator?.stop()
+  }
 
   beforeEach(async () => {
-    vi.resetModules()
-    process.env.POLL_INTERVAL_MS = '5'
-    process.env.MAX_CONCURRENT_SOURCES = '2'
-    process.env.MAX_RETRIES = '1'
-    process.env.RETRY_DELAY_MS = '5'
-    process.env.FETCH_TIMEOUT_MS = '100'
-
     vi.clearAllMocks()
     adapterContexts.length = 0
     adapterFetch.mockResolvedValue({ rawJobs: [], metadata: { fixture: true }, warnings: [] })
@@ -111,25 +128,18 @@ describe('JobOrchestrator', () => {
     vi.spyOn(repo, 'updateFetchRun').mockResolvedValue()
     vi.spyOn(repo, 'updateSourceTimestamps').mockResolvedValue()
     vi.spyOn(repo, 'updateSourceGeoAreaTimestamps').mockResolvedValue()
-
-    const { JobOrchestrator } = await import('../../src/orchestrator/JobOrchestrator')
-    orchestrator = new JobOrchestrator(repo)
   })
 
-  afterEach(async () => {
-    await orchestrator?.stop()
+  afterEach(() => {
     delete process.env.POLL_INTERVAL_MS
-    delete process.env.MAX_CONCURRENT_SOURCES
     delete process.env.MAX_RETRIES
     delete process.env.RETRY_DELAY_MS
     delete process.env.FETCH_TIMEOUT_MS
   })
 
-  async function stopOrchestrator() {
-    await orchestrator.stop()
-  }
-
   it('runs exactly one work item per tick, no overlapping fetches', async () => {
+    const orchestrator = await createOrchestrator()
+
     repo.listSources.mockResolvedValue(sourceRows('passive'))
     repo.listSourceGeographicAreas.mockResolvedValue([pair('source-1', 'area-1')])
     adapterFetch.mockResolvedValue({
@@ -154,10 +164,12 @@ describe('JobOrchestrator', () => {
     await waitForCalls(adapterFetch, 2)
     expect(adapterFetch).toHaveBeenCalledTimes(2)
 
-    await stopOrchestrator()
+    await stopOrchestrator(orchestrator)
   })
 
   it('never runs two fetches concurrently; busy ticks are skipped', async () => {
+    const orchestrator = await createOrchestrator()
+
     repo.listSources.mockResolvedValue(sourceRows('passive'))
     repo.listSourceGeographicAreas.mockResolvedValue([pair('source-1', 'area-1')])
     const pending = deferred<{ rawJobs: unknown[]; warnings: string[] }>()
@@ -177,11 +189,13 @@ describe('JobOrchestrator', () => {
     await waitForCalls(adapterFetch, 2)
     expect(adapterFetch).toHaveBeenCalledTimes(2)
 
-    await stopOrchestrator()
+    await stopOrchestrator(orchestrator)
     await startPromise
   })
 
   it('rotates deterministically across passive pairs and proactive batches', async () => {
+    const orchestrator = await createOrchestrator()
+
     repo.listSources.mockResolvedValue(sourceRows('passive', 'proactive', 'both'))
     repo.listSourceGeographicAreas.mockResolvedValue([
       pair('source-1', 'area-a'),
@@ -199,7 +213,7 @@ describe('JobOrchestrator', () => {
     await waitForCalls(adapterFetch, 3, 3000)
     await waitForCalls(adapterFetchByKeywords, 2, 3000)
 
-    await stopOrchestrator()
+    await stopOrchestrator(orchestrator)
 
     // Check only the first call per item (first rotation)
     expect(adapterFetch.mock.calls.map(([area]) => area.id).slice(0, 3)).toEqual(['area-a', 'area-b', 'area-c'])
@@ -213,13 +227,12 @@ describe('JobOrchestrator', () => {
   })
 
   it('defers a failed item while other eligible items keep running', async () => {
-    process.env.POLL_INTERVAL_MS = '50'
-    process.env.MAX_RETRIES = '0'
-    process.env.RETRY_DELAY_MS = '2000'
-    process.env.FETCH_TIMEOUT_MS = '60000'
-    vi.resetModules()
-    const { JobOrchestrator } = await import('../../src/orchestrator/JobOrchestrator')
-    orchestrator = new JobOrchestrator(repo)
+    const orchestrator = await createOrchestrator({
+      POLL_INTERVAL_MS: '50',
+      MAX_RETRIES: '0',
+      RETRY_DELAY_MS: '2000',
+      FETCH_TIMEOUT_MS: '60000',
+    })
 
     repo.listSources.mockResolvedValue(sourceRows('passive', 'passive'))
     repo.listSourceGeographicAreas.mockResolvedValue([pair('source-1', 'bad'), pair('source-1', 'good')])
@@ -246,17 +259,16 @@ describe('JobOrchestrator', () => {
     expect(badCalls).toBe(1)
     expect(adapterFetch.mock.calls.length).toBeGreaterThan(1)
 
-    await stopOrchestrator()
+    await stopOrchestrator(orchestrator)
   })
 
   it('honors Retry-After by deferring only the affected item', async () => {
-    process.env.POLL_INTERVAL_MS = '50'
-    process.env.MAX_RETRIES = '0'
-    process.env.RETRY_DELAY_MS = '2000'
-    process.env.FETCH_TIMEOUT_MS = '60000'
-    vi.resetModules()
-    const { JobOrchestrator } = await import('../../src/orchestrator/JobOrchestrator')
-    orchestrator = new JobOrchestrator(repo)
+    const orchestrator = await createOrchestrator({
+      POLL_INTERVAL_MS: '50',
+      MAX_RETRIES: '0',
+      RETRY_DELAY_MS: '2000',
+      FETCH_TIMEOUT_MS: '60000',
+    })
 
     repo.listSources.mockResolvedValue(sourceRows('passive', 'passive'))
     repo.listSourceGeographicAreas.mockResolvedValue([pair('source-1', 'limited'), pair('source-1', 'open')])
@@ -285,10 +297,12 @@ describe('JobOrchestrator', () => {
     expect(limitedCalls).toBe(1)
     expect(adapterFetch.mock.calls.length).toBeGreaterThan(1)
 
-    await stopOrchestrator()
+    await stopOrchestrator(orchestrator)
   })
 
   it('retries a failed passive fetch within a cycle and records success on a later attempt', async () => {
+    const orchestrator = await createOrchestrator()
+
     repo.listSources.mockResolvedValue(sourceRows('passive'))
     repo.listSourceGeographicAreas.mockResolvedValue([pair('source-1', 'area-1')])
     adapterFetch
@@ -306,10 +320,8 @@ describe('JobOrchestrator', () => {
   })
 
   it('marks a fetch run failed after retries are exhausted', async () => {
-    process.env.MAX_RETRIES = '0'
-    vi.resetModules()
-    const { JobOrchestrator } = await import('../../src/orchestrator/JobOrchestrator')
-    orchestrator = new JobOrchestrator(repo)
+    const orchestrator = await createOrchestrator({ MAX_RETRIES: '0' })
+
     repo.listSources.mockResolvedValue(sourceRows('passive'))
     repo.listSourceGeographicAreas.mockResolvedValue([pair('source-1', 'area-1')])
     adapterFetch.mockRejectedValue(new Error('upstream unavailable'))
@@ -327,6 +339,8 @@ describe('JobOrchestrator', () => {
   })
 
   it('waits for the in-flight cycle on graceful shutdown', async () => {
+    const orchestrator = await createOrchestrator()
+
     repo.listSources.mockResolvedValue(sourceRows('both'))
     repo.listSourceGeographicAreas.mockResolvedValue([pair('source-1', 'area-1')])
     repo.listActiveUnifiedKeywords.mockResolvedValue(['typescript'])
@@ -336,7 +350,7 @@ describe('JobOrchestrator', () => {
     const startPromise = orchestrator.start()
     await waitForCalls(adapterFetch, 1)
 
-    const stopPromise = stopOrchestrator()
+    const stopPromise = stopOrchestrator(orchestrator)
     let stopped = false
     void stopPromise.then(() => { stopped = true })
     await new Promise((resolve) => setTimeout(resolve, 10))
@@ -351,6 +365,8 @@ describe('JobOrchestrator', () => {
   })
 
   it('runs passive fetches and proactive keywords for the appropriate sources', async () => {
+    const orchestrator = await createOrchestrator()
+
     repo.listSources.mockResolvedValue(sourceRows('passive', 'proactive'))
     repo.listSourceGeographicAreas.mockResolvedValue([pair('source-1', 'area-1')])
     repo.listActiveUnifiedKeywords.mockResolvedValue(['typescript'])
@@ -367,6 +383,6 @@ describe('JobOrchestrator', () => {
     expect(adapterFetchByKeywords).toHaveBeenCalledOnce()
     expect(adapterFetchByKeywords).toHaveBeenCalledWith(['typescript'])
 
-    await stopOrchestrator()
+    await stopOrchestrator(orchestrator)
   })
 })
