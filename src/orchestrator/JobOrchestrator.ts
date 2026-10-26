@@ -50,17 +50,10 @@ export class JobOrchestrator {
   async start(): Promise<void> {
     logger.info('JobOrchestrator started', {
       pollIntervalMs: this.config.pollIntervalMs,
-      maxConcurrentSources: this.config.maxConcurrentSources,
       maxRetries: this.config.maxRetries,
       retryDelayMs: this.config.retryDelayMs,
       fetchTimeoutMs: this.config.fetchTimeoutMs,
       stalledThresholdMs: this.config.stalledThresholdMs,
-    })
-
-    // MAX_CONCURRENT_SOURCES is accepted-but-ignored: the scheduler is serialized
-    // to a single active item. Log it as deprecated so operators are aware.
-    logger.warn('MAX_CONCURRENT_SOURCES is deprecated and ignored; scheduler runs one work item at a time', {
-      maxConcurrentSources: this.config.maxConcurrentSources,
     })
 
     // Main poll loop: run one work item immediately, then one per POLL_INTERVAL_MS tick.

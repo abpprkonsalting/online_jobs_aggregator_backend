@@ -34,7 +34,6 @@ interface Config {
   sourcesConfigPath: string
   enabledSources: string[]
   pollIntervalMs: number
-  maxConcurrentSources: number
   maxRetries: number
   retryDelayMs: number
   apiTimeoutMs: number
@@ -66,7 +65,6 @@ export function getConfig(): Config {
     sourcesConfigPath: process.env.SOURCES_CONFIG_PATH ?? './config/sources.json',
     enabledSources: strList('ENABLED_SOURCES'),
     pollIntervalMs: num('POLL_INTERVAL_MS', 5000),
-    maxConcurrentSources: num('MAX_CONCURRENT_SOURCES', 3),
     maxRetries: num('MAX_RETRIES', 3),
     retryDelayMs: num('RETRY_DELAY_MS', 60000),
     apiTimeoutMs: num('API_TIMEOUT_MS', 30000),
