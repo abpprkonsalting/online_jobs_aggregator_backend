@@ -1,0 +1,32 @@
+#!/bin/sh
+# Commit message validation hook
+# Enforces: [keyword]([main area]/[sub area]): [message]
+# Keywords: feat, fix, refactor, docs, test, chore
+
+COMMIT_MSG_FILE="$1"
+COMMIT_MSG=$(cat "$COMMIT_MSG_FILE")
+
+# Regex: keyword(scope[/subscope]): message
+PATTERN='^(feat|fix|refactor|docs|test|chore)\([a-z0-9-]+(/[a-z0-9-]+)?\)!?: .+'
+
+if ! echo "$COMMIT_MSG" | grep -qE "$PATTERN"; then
+  echo "ERROR: Invalid commit message format."
+  echo ""
+  echo "Got: $COMMIT_MSG"
+  echo ""
+  echo "EBNF format:"
+  echo 'commit-message = keyword "(" main-area [ "/" sub-area ] ")": message'
+  echo 'keyword = "feat" | "fix" | "refactor" | "docs" | "test" | "chore"'
+  echo ""
+  echo "Allowed keywords: feat, fix, refactor, docs, test, chore"
+  echo "Examples:"
+  echo "  feat(api/jobs): add category filtering"
+  echo "  fix(persistence): handle duplicate job entries"
+  echo "  refactor(config): remove unused variable"
+  echo ""
+  echo "Breaking changes: add '!' after the scope or use a BREAKING CHANGE: footer"
+  echo "  feat(api)!: remove allow_remote parameter"
+  exit 1
+fi
+
+exit 0
