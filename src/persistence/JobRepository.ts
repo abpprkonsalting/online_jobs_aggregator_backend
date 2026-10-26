@@ -193,12 +193,19 @@ export class JobRepository implements IJobRepository {
 
     // User's followed categories
     if (userId) {
-      whereClauses.push(`j.id IN (
-        SELECT DISTINCT jc.job_id FROM job_categories jc
-        JOIN user_categories uc ON uc.category_id = jc.category_id
-        WHERE uc.user_id = ? AND uc.enabled = 1
-      )`)
-      params_.push(userId)
+      const userCategoryRows = await this.query<Array<{ count: number } & RowDataPacket>>(
+        `SELECT COUNT(*) as count FROM user_categories WHERE user_id = ? AND enabled = 1`,
+        [userId],
+      )
+      const hasFollowedCategories = (userCategoryRows[0]?.count ?? 0) > 0
+      if (hasFollowedCategories) {
+        whereClauses.push(`j.id IN (
+          SELECT DISTINCT jc.job_id FROM job_categories jc
+          JOIN user_categories uc ON uc.category_id = jc.category_id
+          WHERE uc.user_id = ? AND uc.enabled = 1
+        )`)
+        params_.push(userId)
+      }
     }
 
     const whereSql = whereClauses.length > 0 ? `WHERE ${whereClauses.join(' AND ')}` : ''
