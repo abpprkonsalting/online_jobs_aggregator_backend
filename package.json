@@ -12,7 +12,8 @@
     "release:tag": "node scripts/versioning.cjs tag",
     "version:metadata": "node scripts/versioning.cjs metadata",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "commit:generate": "node scripts/generate-commit.cjs"
   },
   "keywords": [
     "scraper",
