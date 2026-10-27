@@ -29,6 +29,7 @@ router.get(
     query('salary_min').optional().isNumeric(),
     query('salary_max').optional().isNumeric(),
     query('organization').optional().isString(),
+    query('location').optional().isString(),
   ],
   async (req: AuthRequest, res: Response) => {
     if (!validate(req, res)) return
@@ -66,6 +67,7 @@ router.get(
     const salaryMin = req.query.salary_min ? parseFloat(req.query.salary_min as string) : undefined
     const salaryMax = req.query.salary_max ? parseFloat(req.query.salary_max as string) : undefined
     const organization = req.query.organization as string | undefined
+    const location = req.query.location as string | undefined
 
     const result = await repo.findJobsWithFilters({
       limit,
@@ -80,6 +82,7 @@ router.get(
       salaryMin,
       salaryMax,
       organization,
+      location,
       userId: req.auth?.sub,
     })
 

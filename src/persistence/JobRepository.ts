@@ -96,6 +96,7 @@ export class JobRepository implements IJobRepository {
     salaryMin?: number
     salaryMax?: number
     organization?: string
+    location?: string
     userId?: string // for followed categories
   }): Promise<{ jobs: any[]; total: number }> {
     const {
@@ -113,6 +114,7 @@ export class JobRepository implements IJobRepository {
       salaryMin,
       salaryMax,
       organization,
+      location,
       userId,
     } = params
 
@@ -144,6 +146,22 @@ export class JobRepository implements IJobRepository {
     }
     const orderSql = orderClauses.join(', ')
 
+    // Primary location per job (earliest created_at), preferring city then country then raw_text.
+    // Derived table collapses 1:N locations to one row per job so the join never duplicates jobs.
+    const locationJoin = `
+      LEFT JOIN (
+        SELECT l.job_id, c.name AS city_name, co.name AS country_name, l.raw_text AS raw_text
+        FROM locations l
+        JOIN (
+          SELECT job_id, MIN(created_at) AS min_created
+          FROM locations
+          GROUP BY job_id
+        ) fl ON fl.job_id = l.job_id AND fl.min_created = l.created_at
+        LEFT JOIN cities c ON c.id = l.city_id
+        LEFT JOIN countries co ON co.id = c.country_id
+      ) loc ON loc.job_id = j.id
+    `
+
     const whereClauses: string[] = []
     const params_: unknown[] = []
 
@@ -173,6 +191,13 @@ export class JobRepository implements IJobRepository {
     if (organization) {
       whereClauses.push(`LOWER(j.organization) LIKE ?`)
       params_.push(`%${organization.toLowerCase()}%`)
+    }
+
+    // Location filter (city or country name, case-insensitive partial match)
+    if (location) {
+      const like = `%${location.toLowerCase()}%`
+      whereClauses.push(`(LOWER(loc.city_name) LIKE ? OR LOWER(loc.country_name) LIKE ?)`)
+      params_.push(like, like)
     }
 
     // Category filter - join job_categories
@@ -227,18 +252,20 @@ export class JobRepository implements IJobRepository {
     const whereSql = whereClauses.length > 0 ? `WHERE ${whereClauses.join(' AND ')}` : ''
 
     // Count total (for pagination metadata)
-    const countSql = `SELECT COUNT(*) as total FROM jobs j ${whereSql}`
+    const countSql = `SELECT COUNT(*) as total FROM jobs j ${locationJoin} ${whereSql}`
     const countRows = await this.query<Array<{ total: number } & RowDataPacket>>(countSql, params_)
     const total = countRows[0]?.total ?? 0
 
-    // Fields to select for list view (exclude large/internal fields: description_text, raw_data, content_hash)
+    // Fields to select for list view (exclude large/internal fields: raw_data, content_hash)
     const listFields = [
       'j.id',
       'j.source_id',
       'j.external_id',
       'j.title',
       'j.organization',
+      'COALESCE(loc.city_name, loc.country_name, loc.raw_text) AS location',
       'j.job_url',
+      'j.description_text',
       'j.allow_remote',
       'j.salary_min',
       'j.salary_max',
@@ -254,6 +281,7 @@ export class JobRepository implements IJobRepository {
     // Fetch page with sort and pagination
     const dataSql = `
       SELECT ${listFields.join(', ')} FROM jobs j
+      ${locationJoin}
       ${whereSql}
       ORDER BY ${orderSql}
       LIMIT ? OFFSET ?

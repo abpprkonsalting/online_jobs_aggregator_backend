@@ -124,6 +124,7 @@ export interface FindJobsWithFiltersParams {
   salaryMin?: number
   salaryMax?: number
   organization?: string
+  location?: string
   userId?: string
 }
 
