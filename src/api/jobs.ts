@@ -20,8 +20,6 @@ router.get(
   [
     query('limit').optional().isInt({ min: 1, max: 100 }),
     query('offset').optional().isInt({ min: 0 }),
-    query('sort').optional().isIn(['posted_at', 'date_posted', 'title', 'organization', 'salary_min', 'salary_max']),
-    query('sortDir').optional().isIn(['asc', 'desc']),
     query('category').optional().isUUID(),
     query('skill').optional().isUUID(),
     query('city_id').optional().isUUID(),
@@ -37,9 +35,19 @@ router.get(
 
     const limit = Math.min(parseInt(req.query.limit as string) || 20, 100)
     const offset = parseInt(req.query.offset as string) || 0
-    const sort = (req.query.sort as string) || 'posted_at'
-    const sortDirRaw = (req.query.sortDir as string) || 'desc'
-    const sortDir = sortDirRaw === 'asc' ? 'asc' : 'desc'
+
+    const sorts = parseMultiSort(
+      req.query.sort as string | string[] | undefined,
+      req.query.sortDir as string | string[] | undefined,
+    )
+
+    const allowedSortColumns = ['posted_at', 'date_posted', 'title', 'organization', 'salary_min', 'salary_max']
+    for (const s of sorts) {
+      if (!allowedSortColumns.includes(s.field)) {
+        res.status(400).json({ errors: [{ msg: `Invalid sort field: ${s.field}` }] })
+        return
+      }
+    }
 
     // Parse comma-separated IDs for multi-value filters
     const parseIds = (val: string | string[] | undefined): string[] | undefined => {
@@ -62,8 +70,7 @@ router.get(
     const result = await repo.findJobsWithFilters({
       limit,
       offset,
-      sort,
-      sortDir,
+      sorts,
       categoryIds,
       skillIds,
       cityIds,
@@ -85,6 +92,19 @@ router.get(
     })
   }
 )
+
+function parseMultiSort(sort: string | string[] | undefined, sortDir: string | string[] | undefined): Array<{ field: string; dir: 'asc' | 'desc' }> {
+  const fields = sort === undefined || sort === '' ? [] : (Array.isArray(sort) ? sort : [String(sort)])
+  const dirs = sortDir === undefined || sortDir === '' ? [] : (Array.isArray(sortDir) ? sortDir : [String(sortDir)])
+  const result: Array<{ field: string; dir: 'asc' | 'desc' }> = []
+  for (let i = 0; i < fields.length; i++) {
+    const field = String(fields[i]).trim()
+    if (!field) continue
+    const dir = dirs[i] !== undefined ? String(dirs[i]).trim() : 'desc'
+    result.push({ field, dir: dir === 'asc' ? 'asc' : 'desc' })
+  }
+  return result
+}
 
 router.get('/:id', async (req: Request, res: Response) => {
   const job = await repo.getJobWithDetails(req.params.id)

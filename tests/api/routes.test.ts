@@ -329,14 +329,38 @@ describe('HTTP API routers', () => {
       expect(repo.findJobsWithFilters).toHaveBeenCalledWith(expect.objectContaining({
         limit: 1,
         offset: 1,
-        sort: 'salary_min',
-        sortDir: 'asc',
+        sorts: [{ field: 'salary_min', dir: 'asc' }],
         sourceId,
         allowRemote: true,
         salaryMin: 80000,
         organization: 'example',
         userId: userId,
       }))
+    })
+
+    it('passes multiple sort criteria to findJobsWithFilters in priority order', async () => {
+      repo.findJobsWithFilters.mockResolvedValue({ jobs: [], total: 0 })
+
+      const response = await asUser(request(createApp()).get(
+        '/jobs?sort=organization&sortDir=asc&sort=posted_at&sortDir=desc&limit=5',
+      ))
+
+      expect(response.status).toBe(200)
+      expect(repo.findJobsWithFilters).toHaveBeenCalledWith(expect.objectContaining({
+        sorts: [
+          { field: 'organization', dir: 'asc' },
+          { field: 'posted_at', dir: 'desc' },
+        ],
+        limit: 5,
+        userId: userId,
+      }))
+    })
+
+    it('rejects an unknown sort field with 400', async () => {
+      const app = createApp()
+      const invalid = await asUser(request(app).get('/jobs?sort=unknown_field'))
+      expect(invalid.status).toBe(400)
+      expect(repo.findJobsWithFilters).not.toHaveBeenCalled()
     })
 
     it('validates list query parameters and returns not found for missing job details', async () => {

@@ -114,6 +114,7 @@ export interface FindJobsWithFiltersParams {
   offset?: number
   sort?: string
   sortDir?: 'asc' | 'desc'
+  sorts?: Array<{ field: string; dir: 'asc' | 'desc' }>
   categoryIds?: string[]
   skillIds?: string[]
   cityIds?: string[]

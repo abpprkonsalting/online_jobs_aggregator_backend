@@ -99,4 +99,35 @@ describe('JobRepository persistence contracts', () => {
 
     await expect(repo.upsertJob(job)).resolves.toEqual({ id: 'new-job', isNew: true })
   })
+
+  it('findJobsWithFilters emits multi-sort ORDER BY in priority order', async () => {
+    vi.spyOn(mockDriver, 'query')
+      .mockResolvedValueOnce({ rows: [{ total: 0 }], fields: [] })
+      .mockResolvedValueOnce({ rows: [], fields: [] })
+
+    await repo.findJobsWithFilters({
+      limit: 10,
+      offset: 0,
+      sorts: [
+        { field: 'organization', dir: 'asc' },
+        { field: 'posted_at', dir: 'desc' },
+      ],
+    })
+
+    const calls = mockDriver.query.mock.calls
+    const dataSql = calls[1][0] as string
+    expect(dataSql).toContain('ORDER BY j.organization ASC, j.posted_at DESC')
+  })
+
+  it('findJobsWithFilters falls back to single sort when sorts is omitted', async () => {
+    vi.spyOn(mockDriver, 'query')
+      .mockResolvedValueOnce({ rows: [{ total: 0 }], fields: [] })
+      .mockResolvedValueOnce({ rows: [], fields: [] })
+
+    await repo.findJobsWithFilters({ limit: 10, offset: 0, sort: 'title', sortDir: 'asc' })
+
+    const calls = mockDriver.query.mock.calls
+    const dataSql = calls[1][0] as string
+    expect(dataSql).toContain('ORDER BY j.title ASC')
+  })
 })

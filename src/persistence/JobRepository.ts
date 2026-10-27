@@ -86,6 +86,7 @@ export class JobRepository implements IJobRepository {
     offset?: number
     sort?: string
     sortDir?: 'asc' | 'desc'
+    sorts?: Array<{ field: string; dir: 'asc' | 'desc' }>
     categoryIds?: string[]
     skillIds?: string[]
     cityIds?: string[]
@@ -102,6 +103,7 @@ export class JobRepository implements IJobRepository {
       offset = 0,
       sort = 'posted_at',
       sortDir = 'desc',
+      sorts,
       categoryIds,
       skillIds,
       cityIds,
@@ -125,8 +127,22 @@ export class JobRepository implements IJobRepository {
       'created_at',
       'updated_at',
     ]
-    const safeSort = allowedSortColumns.includes(sort) ? sort : 'posted_at'
-    const safeSortDir = sortDir === 'asc' ? 'ASC' : 'DESC'
+
+    // Build ORDER BY clauses from multi-sort criteria (priority order), falling back to single sort/sortDir.
+    const orderClauses: string[] = []
+    if (sorts && sorts.length > 0) {
+      for (const s of sorts) {
+        if (allowedSortColumns.includes(s.field)) {
+          orderClauses.push(`j.${s.field} ${s.dir === 'asc' ? 'ASC' : 'DESC'}`)
+        }
+      }
+    }
+    if (orderClauses.length === 0) {
+      const safeSort = allowedSortColumns.includes(sort) ? sort : 'posted_at'
+      const safeSortDir = sortDir === 'asc' ? 'ASC' : 'DESC'
+      orderClauses.push(`j.${safeSort} ${safeSortDir}`)
+    }
+    const orderSql = orderClauses.join(', ')
 
     const whereClauses: string[] = []
     const params_: unknown[] = []
@@ -239,7 +255,7 @@ export class JobRepository implements IJobRepository {
     const dataSql = `
       SELECT ${listFields.join(', ')} FROM jobs j
       ${whereSql}
-      ORDER BY j.${safeSort} ${safeSortDir}
+      ORDER BY ${orderSql}
       LIMIT ? OFFSET ?
     `
     const dataParams = [...params_, limit, offset]
