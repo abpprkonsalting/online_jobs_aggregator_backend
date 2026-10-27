@@ -176,8 +176,29 @@ async function main() {
   console.log(proposedMessage)
   console.log('-------------------------------\n')
 
-  const accept = await confirm('Accept this commit message? (y/N): ')
-  if (accept.toLowerCase() !== 'y') {
+  const accept = await confirm('Accept this commit message? (y/n/M - modify): ')
+  const choice = accept.toLowerCase()
+
+  if (choice === 'm') {
+    console.log('\nCurrent message (press Enter to keep, or type a replacement):')
+    console.log(proposedMessage)
+    console.log('')
+    const modified = await confirm('Edit commit message: ')
+    const finalMessage = modified.trim() ? modified : proposedMessage
+    console.log('\n--- Revised commit message ---')
+    console.log(finalMessage)
+    console.log('-------------------------------\n')
+    const confirmAccept = await confirm('Commit with this message? (Y/n): ')
+    if (confirmAccept.toLowerCase() === 'n') {
+      console.log('Aborted.')
+      process.exit(0)
+    }
+    run('git', ['commit', '-m', finalMessage])
+    console.log('Commit created.')
+    return
+  }
+
+  if (choice !== 'y') {
     console.log('Aborted.')
     process.exit(0)
   }
