@@ -30,7 +30,7 @@ describe('database pool and transaction lifecycle', () => {
     connection.rollback.mockResolvedValue(undefined)
   })
 
-  it('creates and reuses a pool, and delegates query and execute arguments', async () => {
+  it('creates a single pool shared by getPool() and getDriver()', async () => {
     const db = await import('../../src/database/db')
     const rows = [{ id: 'row-1' }]
     const result = { affectedRows: 1 }
@@ -43,9 +43,16 @@ describe('database pool and transaction lifecycle', () => {
     await expect(db.query('SELECT ?', ['value'])).resolves.toBe(rows)
     await expect(db.execute('UPDATE jobs SET title = ?', ['title'])).resolves.toBe(result)
 
-    expect(createPool).toHaveBeenCalledTimes(2)
+    expect(createPool).toHaveBeenCalledTimes(1)
     expect(pool.query).toHaveBeenNthCalledWith(1, 'SELECT ?', ['value'])
     expect(pool.query).toHaveBeenNthCalledWith(2, 'UPDATE jobs SET title = ?', ['title'])
+  })
+
+  it('getDriver() reuses the getPool() pool (singleton driver)', async () => {
+    const db = await import('../../src/database/db')
+
+    expect(db.getDriver()).toBe(db.getDriver())
+    expect(createPool).toHaveBeenCalledTimes(1)
   })
 
   it('commits successful transactions and always releases the connection', async () => {
@@ -72,14 +79,18 @@ describe('database pool and transaction lifecycle', () => {
     expect(connection.release).toHaveBeenCalledOnce()
   })
 
-  it('closes and clears an initialized pool idempotently', async () => {
+  it('closes and clears the shared pool idempotently', async () => {
     const db = await import('../../src/database/db')
     db.getPool()
+    db.getDriver()
 
     await db.closePool()
     await db.closePool()
 
     expect(pool.end).toHaveBeenCalledOnce()
+    expect(createPool).toHaveBeenCalledTimes(1)
+
+    // re-initialization creates a fresh pool
     expect(db.getPool()).toBe(pool)
     expect(createPool).toHaveBeenCalledTimes(2)
   })
