@@ -6,6 +6,11 @@
 COMMIT_MSG_FILE="$1"
 COMMIT_MSG=$(cat "$COMMIT_MSG_FILE")
 
+# Skip merge commits (e.g. "Merge branch '...'")
+if echo "$COMMIT_MSG" | grep -qiE "^merge "; then
+  exit 0
+fi
+
 # Regex: keyword(scope[/subscope]): message
 PATTERN='^(feat|fix|refactor|docs|test|chore)\([a-z0-9-]+(/[a-z0-9-]+)?\)!?: .+'
 
