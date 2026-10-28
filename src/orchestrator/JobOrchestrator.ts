@@ -1,9 +1,11 @@
+import fs from 'fs'
+import path from 'path'
 import { IJobRepository } from '../persistence/IJobRepository'
 import { createJobRepository } from '../database/db'
 import { logger } from '../utils/logger'
 import { getConfig } from '../config'
 import { createRateLimiter } from '../utils/rate-limiter'
-import type { GeographicArea, JobSourceContext, SourceConfig } from '../sources/base/JobSource'
+import { JobSource, type GeographicArea, type JobSourceContext, type SourceConfig } from '../sources/base/JobSource'
 
 type WorkItemKind = 'passive' | 'proactive'
 
@@ -39,6 +41,8 @@ export class JobOrchestrator {
   private interval: ReturnType<typeof setInterval> | null = null
   private sources = new Map<string, SourceConfig>()
   private rateLimiters = new Map<string, ReturnType<typeof createRateLimiter>>()
+  private sourceAdapters = new Map<string, typeof JobSource>()
+  private adaptersLoaded = false
   private deferrals = new Map<string, Deferral>()
   private backoff = new Map<string, BackoffState>()
   private rrIndex = 0
@@ -517,34 +521,45 @@ export class JobOrchestrator {
   }
 
   private async fetchFromAdapter(ctx: JobSourceContext, area: GeographicArea): Promise<any> {
-    const { ReziJobSource } = await import('../sources/rezi/ReziJobSource')
-    const adapter = new ReziJobSource(ctx)
+    const AdapterClass = this.sourceAdapters.get(ctx.source.id)
+    if (!AdapterClass) {
+      throw new Error(`No source adapter registered for source ${ctx.source.id} (${ctx.source.name})`)
+    }
+    const adapter = new (AdapterClass as new (ctx: JobSourceContext) => JobSource)(ctx)
     try {
       return await adapter.fetch(area)
     } finally {
       if (adapter.cleanup) {
-        await adapter.cleanup().catch((err) => {
-          logger.warn('Adapter cleanup failed', { error: err.message })
+        await adapter.cleanup().catch((err: unknown) => {
+          logger.warn('Adapter cleanup failed', { error: (err as Error).message })
         })
       }
     }
   }
 
   private async fetchFromAdapterByKeywords(ctx: JobSourceContext, keywords: string[]): Promise<any> {
-    const { ReziJobSource } = await import('../sources/rezi/ReziJobSource')
-    const adapter = new ReziJobSource(ctx)
+    const AdapterClass = this.sourceAdapters.get(ctx.source.id)
+    if (!AdapterClass) {
+      throw new Error(`No source adapter registered for source ${ctx.source.id} (${ctx.source.name})`)
+    }
+    const adapter = new (AdapterClass as new (ctx: JobSourceContext) => JobSource)(ctx)
+    if (!adapter.fetchByKeywords) {
+      throw new Error(`Source ${ctx.source.id} does not support proactive (keyword) fetch`)
+    }
     try {
       return await adapter.fetchByKeywords(keywords)
     } finally {
       if (adapter.cleanup) {
-        await adapter.cleanup().catch((err) => {
-          logger.warn('Adapter cleanup failed', { error: err.message })
+        await adapter.cleanup().catch((err: unknown) => {
+          logger.warn('Adapter cleanup failed', { error: (err as Error).message })
         })
       }
     }
   }
 
   private async loadSources(filterSourceId?: string): Promise<SourceConfig[]> {
+    await this.loadSourceAdapters()
+
     const rows = await this.repo.listSources()
     const sources: SourceConfig[] = rows.map((row: any) => ({
       id: row.id,
@@ -567,9 +582,80 @@ export class JobOrchestrator {
       if (!this.rateLimiters.has(source.id)) {
         this.rateLimiters.set(source.id, createRateLimiter(source.config))
       }
+      if (!this.sourceAdapters.has(source.id)) {
+        logger.warn(`No source adapter registered for source ${source.id} (${source.name})`)
+      }
     }
 
     return filtered
+  }
+
+  /**
+   * Register a JobSource adapter class for a given sourceId.
+   * Used by tests and by programmatic plugin registration.
+   */
+  registerAdapter(sourceId: string, AdapterClass: new (ctx: JobSourceContext) => JobSource): void {
+    if (this.sourceAdapters.has(sourceId)) {
+      logger.warn(`Overwriting existing adapter for sourceId "${sourceId}"`)
+    }
+    this.sourceAdapters.set(sourceId, AdapterClass)
+  }
+
+  /**
+   * Walk src/sources/ subdirectory, discover all classes extending JobSource,
+   * and register them keyed by derived sourceId (class name minus "JobSource" suffix, lowercased).
+   * Only sources with a matching row in the sources table will be instantiated at fetch time.
+   */
+  private async loadSourceAdapters(): Promise<void> {
+    if (this.adaptersLoaded) return
+    this.adaptersLoaded = true
+
+    const sourcesDir = path.join(__dirname, '..', 'sources')
+    let entries: fs.Dirent[]
+    try {
+      entries = fs.readdirSync(sourcesDir, { withFileTypes: true })
+    } catch {
+      logger.warn(`Could not read sources directory: ${sourcesDir}`)
+      return
+    }
+
+    for (const entry of entries) {
+      if (!entry.isDirectory() || entry.name === 'base') continue
+      const adapterDir = path.join(sourcesDir, entry.name)
+      let files: string[]
+      try {
+        files = fs.readdirSync(adapterDir)
+      } catch {
+        continue
+      }
+
+      for (const file of files) {
+        if (!file.endsWith('.ts') && !file.endsWith('.js')) continue
+        const filePath = path.join(adapterDir, file)
+        try {
+          const mod = await import(filePath)
+          for (const key of Object.keys(mod)) {
+            const exported = (mod as any)[key]
+            if (
+              typeof exported === 'function' &&
+              exported.prototype instanceof JobSource &&
+              exported !== JobSource
+            ) {
+              const className = exported.name
+              const sourceId = className.replace(/JobSource$/i, '').toLowerCase()
+              if (this.sourceAdapters.has(sourceId)) {
+                logger.warn(`Duplicate source adapter for ${sourceId}: ${className}, skipping`)
+                continue
+              }
+              this.sourceAdapters.set(sourceId, exported)
+              logger.info(`Discovered source adapter: ${className} -> sourceId "${sourceId}"`)
+            }
+          }
+        } catch (err) {
+          logger.warn(`Failed to load source adapter from ${filePath}`, { error: (err as Error).message })
+        }
+      }
+    }
   }
 
   private getRateLimiter(source: SourceConfig): ReturnType<typeof createRateLimiter> {

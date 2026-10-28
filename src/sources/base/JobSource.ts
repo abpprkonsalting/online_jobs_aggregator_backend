@@ -39,5 +39,6 @@ export interface JobSourceContext {
 export abstract class JobSource {
   constructor(protected ctx: JobSourceContext) {}
   abstract fetch(geographicArea: GeographicArea): Promise<FetchResult>
+  fetchByKeywords?(keywords: string[]): Promise<FetchResult>
   cleanup?(): Promise<void>
 }

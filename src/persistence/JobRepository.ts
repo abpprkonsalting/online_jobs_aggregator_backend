@@ -97,6 +97,7 @@ export class JobRepository implements IJobRepository {
     salaryMax?: number
     organization?: string
     location?: string
+    search?: string
     userId?: string // for followed categories
   }): Promise<{ jobs: any[]; total: number }> {
     const {
@@ -115,6 +116,7 @@ export class JobRepository implements IJobRepository {
       salaryMax,
       organization,
       location,
+      search,
       userId,
     } = params
 
