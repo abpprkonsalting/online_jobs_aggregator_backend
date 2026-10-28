@@ -1017,6 +1017,63 @@ export class JobRepository implements IJobRepository {
     )
   }
 
+  // ── Saved jobs ──
+  async getSavedJob(userId: string, jobId: string): Promise<any | null> {
+    const rows = await this.query<any>(
+      `SELECT * FROM saved_jobs WHERE user_id = ? AND job_id = ?`,
+      [userId, jobId]
+    )
+    return rows.length ? rows[0] : null
+  }
+
+  async listSavedJobs(userId: string): Promise<any[]> {
+    return this.query<any>(`
+      SELECT sj.id, sj.user_id, sj.job_id, sj.status, sj.created_at, sj.updated_at,
+             j.title, j.organization, j.job_url, j.salary_min, j.salary_max,
+             j.salary_currency, j.salary_unit, j.posted_at, j.date_posted,
+             COALESCE(loc.city_name, loc.country_name, loc.raw_text) AS location
+      FROM saved_jobs sj
+      JOIN jobs j ON j.id = sj.job_id
+      LEFT JOIN (
+        SELECT l.job_id, c.name AS city_name, co.name AS country_name, l.raw_text AS raw_text
+        FROM locations l
+        JOIN (
+          SELECT job_id, MIN(created_at) AS min_created
+          FROM locations
+          GROUP BY job_id
+        ) fl ON fl.job_id = l.job_id AND fl.min_created = l.created_at
+        LEFT JOIN cities c ON c.id = l.city_id
+        LEFT JOIN countries co ON co.id = c.country_id
+      ) loc ON loc.job_id = j.id
+      WHERE sj.user_id = ?
+      ORDER BY sj.created_at DESC
+    `, [userId])
+  }
+
+  async createSavedJob(userId: string, jobId: string, status: string = 'saved'): Promise<void> {
+    const id = crypto.randomUUID()
+    const now = new Date()
+    await this.execute(
+      `INSERT INTO saved_jobs (id, user_id, job_id, status, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      [id, userId, jobId, status, now, now]
+    )
+  }
+
+  async updateSavedJobStatus(userId: string, jobId: string, status: string): Promise<void> {
+    await this.execute(
+      `UPDATE saved_jobs SET status = ?, updated_at = ? WHERE user_id = ? AND job_id = ?`,
+      [status, new Date(), userId, jobId]
+    )
+  }
+
+  async deleteSavedJob(userId: string, jobId: string): Promise<void> {
+    await this.execute(
+      `DELETE FROM saved_jobs WHERE user_id = ? AND job_id = ?`,
+      [userId, jobId]
+    )
+  }
+
   // ── Keywords ──
   async listKeywords(enabledOnly?: boolean): Promise<any[]> {
     const where = enabledOnly ? 'WHERE enabled = 1' : ''
