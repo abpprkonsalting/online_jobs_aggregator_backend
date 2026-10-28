@@ -25,8 +25,7 @@ export function getPool(): Pool {
 
 export function getDriver(): IDbDriver {
   if (!driver) {
-    const config = getConfig()
-    driver = new MySqlDriver(config.databaseUrl, config.dbPoolLimit)
+    driver = new MySqlDriver(getPool())
   }
   return driver
 }
@@ -49,10 +48,7 @@ export async function closePool(): Promise<void> {
     await pool.end()
     pool = null
   }
-  if (driver) {
-    await driver.close()
-    driver = null
-  }
+  driver = null
 }
 
 export function createJobRepository(): JobRepository {

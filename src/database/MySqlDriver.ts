@@ -34,16 +34,8 @@ class MySqlConnection implements IDbConnection {
 export class MySqlDriver implements IDbDriver {
   private pool: Pool
 
-  constructor(connectionUri: string, connectionLimit: number = 10) {
-    this.pool = createPool({
-      uri: connectionUri,
-      waitForConnections: true,
-      connectionLimit,
-      maxIdle: Math.min(5, connectionLimit),
-      idleTimeout: 60000,
-      enableKeepAlive: true,
-      keepAliveInitialDelay: 10000,
-    })
+  constructor(pool: Pool) {
+    this.pool = pool
   }
 
   async getConnection(): Promise<IDbConnection> {
@@ -86,6 +78,6 @@ export class MySqlDriver implements IDbDriver {
   }
 }
 
-export function createMySqlDriver(connectionUri: string, connectionLimit?: number): IDbDriver {
-  return new MySqlDriver(connectionUri, connectionLimit)
+export function createMySqlDriver(pool: Pool): IDbDriver {
+  return new MySqlDriver(pool)
 }
