@@ -321,6 +321,11 @@ export class JobRepository implements IJobRepository {
     return this.query<any>(`SELECT * FROM fetch_runs ORDER BY created_at DESC LIMIT ? OFFSET ?`, [safeLimit, safeOffset])
   }
 
+  async getFetchRun(id: string): Promise<any | null> {
+    const rows = await this.query<any>(`SELECT * FROM fetch_runs WHERE id = ?`, [id])
+    return rows.length ? rows[0] : null
+  }
+
   async listCountries(): Promise<any[]> {
     return this.query<any>(`SELECT * FROM countries ORDER BY name ASC`)
   }
