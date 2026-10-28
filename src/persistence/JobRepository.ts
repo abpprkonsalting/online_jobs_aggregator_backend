@@ -200,6 +200,13 @@ export class JobRepository implements IJobRepository {
       params_.push(like, like)
     }
 
+    // Free-text search on title and organization
+    if (search) {
+      const like = `%${search.toLowerCase()}%`
+      whereClauses.push(`(LOWER(j.title) LIKE ? OR LOWER(j.organization) LIKE ?)`)
+      params_.push(like, like)
+    }
+
     // Category filter - join job_categories
     if (categoryIds && categoryIds.length > 0) {
       const placeholders = categoryIds.map(() => '?').join(', ')
