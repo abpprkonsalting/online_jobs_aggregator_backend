@@ -199,6 +199,12 @@ export interface IJobRepository {
   listFetchRuns(sourceId?: string, limit?: number, offset?: number): Promise<any[]>
   getFetchRun(id: string): Promise<any | null>
 
+  // Saved jobs
+  getSavedJob(userId: string, jobId: string): Promise<any | null>
+  listSavedJobs(userId: string): Promise<any[]>
+  createSavedJob(userId: string, jobId: string, status?: string): Promise<void>
+  updateSavedJobStatus(userId: string, jobId: string, status: string): Promise<void>
+  deleteSavedJob(userId: string, jobId: string): Promise<void>
 
   // Master data - skills
   listSkills(): Promise<any[]>

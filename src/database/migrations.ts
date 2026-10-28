@@ -179,6 +179,17 @@ export async function ensureDatabase(): Promise<void> {
       PRIMARY KEY (user_id, category_id),
       FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
       FOREIGN KEY (category_id) REFERENCES categories(id) ON DELETE CASCADE
+    )`,
+    `CREATE TABLE IF NOT EXISTS saved_jobs (
+      id CHAR(36) PRIMARY KEY,
+      user_id CHAR(36) NOT NULL,
+      job_id CHAR(36) NOT NULL,
+      status VARCHAR(20) NOT NULL DEFAULT 'saved',
+      created_at DATETIME NOT NULL,
+      updated_at DATETIME NOT NULL,
+      UNIQUE KEY unique_user_job (user_id, job_id),
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+      FOREIGN KEY (job_id) REFERENCES jobs(id) ON DELETE CASCADE
     )`
   ]
 

@@ -128,4 +128,82 @@ router.delete(
   }
 )
 
+// ── Saved jobs ──
+router.get(
+  '/me/saved-jobs',
+  requireAuthStrict,
+  async (req: AuthRequest, res: Response) => {
+    const userId = req.auth!.sub
+    const saved = await repo.listSavedJobs(userId)
+    res.json(saved)
+  }
+)
+
+router.post(
+  '/me/saved-jobs',
+  requireAuthStrict,
+  [body('job_id').isUUID(), body('status').optional().isIn(['saved', 'applied'])],
+  async (req: AuthRequest, res: Response) => {
+    if (!validate(req, res)) return
+    const userId = req.auth!.sub
+    const { job_id, status } = req.body
+
+    const existing = await repo.getSavedJob(userId, job_id)
+    if (existing) {
+      res.status(409).json({ error: 'Job already saved' })
+      return
+    }
+
+    const jobExists = await repo.getJobDetails(job_id)
+    if (!jobExists) {
+      res.status(404).json({ error: 'Job not found' })
+      return
+    }
+
+    await repo.createSavedJob(userId, job_id, status ?? 'saved')
+    res.status(201).json({ user_id: userId, job_id, status: status ?? 'saved' })
+  }
+)
+
+router.patch(
+  '/me/saved-jobs/:job_id',
+  requireAuthStrict,
+  [param('job_id').isUUID(), body('status').isIn(['saved', 'applied'])],
+  async (req: AuthRequest, res: Response) => {
+    if (!validate(req, res)) return
+    const userId = req.auth!.sub
+    const { job_id } = req.params
+    const { status } = req.body
+
+    const existing = await repo.getSavedJob(userId, job_id)
+    if (!existing) {
+      res.status(404).json({ error: 'Saved job not found' })
+      return
+    }
+
+    await repo.updateSavedJobStatus(userId, job_id, status)
+    res.json({ user_id: userId, job_id, status })
+  }
+)
+
+router.delete(
+  '/me/saved-jobs/:job_id',
+  requireAuthStrict,
+  [param('job_id').isUUID()],
+  async (req: AuthRequest, res: Response) => {
+    if (!validate(req, res)) return
+    const userId = req.auth!.sub
+    const { job_id } = req.params
+
+    const existing = await repo.getSavedJob(userId, job_id)
+    if (!existing) {
+      res.status(404).json({ error: 'Saved job not found' })
+      return
+    }
+
+    await repo.deleteSavedJob(userId, job_id)
+    res.json({ success: true })
+  }
+)
+
 export default router
