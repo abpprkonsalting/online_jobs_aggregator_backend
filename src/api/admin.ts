@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express'
 import { body, param, query, validationResult } from 'express-validator'
 import { requireRole } from '../middleware/auth'
 import { createJobRepository } from '../database/db'
+import { getOrchestrator } from '../orchestrator/JobOrchestrator'
 
 const router = Router()
 const repo = createJobRepository()
@@ -184,6 +185,40 @@ router.get(
     const offset = parseInt(req.query.offset as string) || 0
     const runs = await repo.listFetchRuns(undefined, limit, offset)
     res.json(runs)
+  }
+)
+
+router.get(
+  '/fetch-runs/:id',
+  [param('id').isUUID()],
+  async (req: Request, res: Response) => {
+    if (!validate(req, res)) return
+    const run = await repo.getFetchRun(req.params.id)
+    if (!run) {
+      res.status(404).json({ error: 'Fetch run not found' })
+      return
+    }
+    res.json(run)
+  }
+)
+
+router.post(
+  '/fetch-cycles/start',
+  requireRole('admin'),
+  async (_req: Request, res: Response) => {
+    const orchestrator = getOrchestrator()
+    await orchestrator.start()
+    res.json({ status: 'started' })
+  }
+)
+
+router.post(
+  '/fetch-cycles/stop',
+  requireRole('admin'),
+  async (_req: Request, res: Response) => {
+    const orchestrator = getOrchestrator()
+    await orchestrator.stop()
+    res.json({ status: 'stopped' })
   }
 )
 
