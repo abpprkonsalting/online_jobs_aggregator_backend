@@ -122,7 +122,7 @@ router.post(
 
     // Trigger proactive fetch for the search keyword(s)
     if (searchQuery && searchQuery.trim().length > 0) {
-      const keywords = searchQuery.split(/[\s,]+).filter((k: string) => k.trim().length > 0)
+      const keywords = searchQuery.split(new RegExp('[\\s,]+')).filter((k: string) => k.trim().length > 0)
       try {
         await getOrchestrator().runProactiveSearch(keywords)
       } catch (err) {
