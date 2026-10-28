@@ -204,6 +204,22 @@ export async function ensureDatabase(): Promise<void> {
     await driver.query(`ALTER TABLE sources ADD COLUMN working_mode ENUM('passive','proactive','both') NOT NULL DEFAULT 'both' AFTER type`)
   }
 
+  const existingActiveTokenCol = await driver.query<any>(`
+    SELECT COLUMN_NAME FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'refresh_tokens' AND COLUMN_NAME = 'active_token'
+  `)
+  if (existingActiveTokenCol.rows.length === 0) {
+    await driver.query(`ALTER TABLE refresh_tokens ADD COLUMN active_token CHAR(36) AS (IF(revoked_at IS NULL, user_id, NULL)) STORED`)
+  }
+
+  const existingActiveTokenIdx = await driver.query<any>(`
+    SELECT INDEX_NAME FROM information_schema.STATISTICS
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'refresh_tokens' AND INDEX_NAME = 'idx_refresh_tokens_active_token'
+  `)
+  if (existingActiveTokenIdx.rows.length === 0) {
+    await driver.query(`ALTER TABLE refresh_tokens ADD UNIQUE INDEX idx_refresh_tokens_active_token (active_token)`)
+  }
+
   // Add measured indexes for query performance (idempotent)
   const indexDefinitions: Array<{ table: string; name: string; columns: string }> = [
     // fetch_runs: admin list with source_id filter + created_at ordering
