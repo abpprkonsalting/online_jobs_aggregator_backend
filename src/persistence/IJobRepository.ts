@@ -196,6 +196,8 @@ export interface IJobRepository {
   createFetchRun(data: FetchRunData): Promise<string>
   updateFetchRun(data: FetchRunUpdate): Promise<void>
   listFetchRuns(sourceId?: string, limit?: number, offset?: number): Promise<any[]>
+  getFetchRun(id: string): Promise<any | null>
+
 
   // Master data - skills
   listSkills(): Promise<any[]>
