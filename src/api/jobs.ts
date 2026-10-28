@@ -1,7 +1,9 @@
 import { Router, Request, Response } from 'express'
-import { query, validationResult } from 'express-validator'
-import { AuthRequest } from '../middleware/auth'
+import { body, query, validationResult } from 'express-validator'
+import { AuthRequest, requireAuthStrict } from '../middleware/auth'
 import { createJobRepository } from '../database/db'
+import { getOrchestrator } from '../orchestrator/JobOrchestrator'
+import { logger } from '../utils/logger'
 
 const router = Router()
 const repo = createJobRepository()
@@ -92,6 +94,72 @@ router.get(
       limit,
       offset,
       hasMore: offset + limit < result.total,
+    })
+  }
+)
+
+router.post(
+  '/search',
+  requireAuthStrict,
+  [
+    body('query').optional().isString(),
+    body('category_id').optional().isUUID(),
+    body('city_id').optional().isUUID(),
+    body('country_id').optional().isUUID(),
+    body('limit').optional().isInt({ min: 1, max: 100 }),
+    body('offset').optional().isInt({ min: 0 }),
+  ],
+  async (req: AuthRequest, res: Response) => {
+    const errors = validationResult(req)
+    if (!errors.isEmpty()) {
+      res.status(400).json({ errors: errors.array() })
+      return
+    }
+
+    const { query: searchQuery, category_id, city_id, country_id, limit, offset } = req.body
+    const safeLimit = Math.min(limit ?? 20, 100)
+    const safeOffset = offset ?? 0
+
+    // Trigger proactive fetch for the search keyword(s)
+    if (searchQuery && searchQuery.trim().length > 0) {
+      const keywords = searchQuery.split(/[\s,]+).filter((k: string) => k.trim().length > 0)
+      try {
+        await getOrchestrator().runProactiveSearch(keywords)
+      } catch (err) {
+        // Non-fatal: proceed to return existing results even if fetch fails
+        logger.warn('Proactive search fetch failed, returning existing results', {
+          error: (err as Error).message,
+        })
+      }
+    }
+
+    // Parse multi-value IDs
+    const parseIds = (val: string | string[] | undefined): string[] | undefined => {
+      if (!val) return undefined
+      const arr = Array.isArray(val) ? val : String(val).split(',')
+      return arr.filter((v: string) => v.trim().length > 0)
+    }
+
+    const categoryIds = category_id ? [category_id] : undefined
+    const cityIds = city_id ? [city_id] : undefined
+    const countryIds = country_id ? [country_id] : undefined
+
+    const result = await repo.findJobsWithFilters({
+      limit: safeLimit,
+      offset: safeOffset,
+      categoryIds,
+      cityIds,
+      countryIds,
+      search: searchQuery,
+      userId: req.auth?.sub,
+    })
+
+    res.json({
+      jobs: result.jobs,
+      total: result.total,
+      limit: safeLimit,
+      offset: safeOffset,
+      hasMore: safeOffset + safeLimit < result.total,
     })
   }
 )
