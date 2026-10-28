@@ -1,6 +1,6 @@
 import { ensureDatabase, seedAdminUser, closeDbPool } from '../database/migrations'
 import { getConfig } from '../config'
-import { JobOrchestrator } from '../orchestrator/JobOrchestrator'
+import { getOrchestrator } from '../orchestrator/JobOrchestrator'
 import { logger } from '../utils/logger'
 import { versionLogFields } from '../utils/version'
 
@@ -18,7 +18,7 @@ async function main() {
   await ensureDatabase()
   await seedAdminUser(config.adminEmail, config.adminPassword, 'admin')
 
-  const orchestrator = new JobOrchestrator()
+  const orchestrator = getOrchestrator()
 
   // Graceful shutdown on signals
   const signals = ['SIGINT', 'SIGTERM'] as const

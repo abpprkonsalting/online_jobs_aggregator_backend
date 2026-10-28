@@ -48,6 +48,11 @@ export class JobOrchestrator {
   }
 
   async start(): Promise<void> {
+    // Idempotent: if already running, do nothing
+    if (this.interval) return
+
+    this.stop$ = false
+
     logger.info('JobOrchestrator started', {
       pollIntervalMs: this.config.pollIntervalMs,
       maxRetries: this.config.maxRetries,
@@ -78,6 +83,9 @@ export class JobOrchestrator {
   }
 
   async stop(): Promise<void> {
+    // Idempotent: if already stopped, do nothing
+    if (this.stop$ && !this.interval) return
+
     logger.info('Stopping orchestrator...')
     this.stop$ = true
     if (this.interval) {
@@ -94,6 +102,25 @@ export class JobOrchestrator {
     }
 
     logger.info('Orchestrator stopped')
+  }
+
+  /**
+   * Run a proactive fetch cycle for the given keywords across all proactive-enabled sources.
+   * Used by the free-text search endpoint to trigger on-demand collection.
+   */
+  async runProactiveSearch(keywords: string[]): Promise<void> {
+    const sources = await this.loadSources()
+    if (this.stop$) return
+
+    const proactiveSources = sources.filter(
+      (s) => s.working_mode === 'proactive' || s.working_mode === 'both'
+    )
+
+    for (const source of proactiveSources) {
+      if (this.stop$) return
+      const ctx = this.buildCtx({ kind: 'proactive', sourceId: source.id, keywords, id: `search:proactive:${source.id}` })
+      await this.runProactiveSourceCycle(source, keywords, ctx)
+    }
   }
 
   /** One scheduler tick: if idle, select exactly one eligible work item and run it. */
