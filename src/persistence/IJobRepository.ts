@@ -233,6 +233,8 @@ export interface IJobRepository {
   listCategoryKeywords(categoryId: string): Promise<any[]>
   upsertCategoryKeyword(data: CategoryKeywordData): Promise<void>
   deleteCategoryKeyword(categoryId: string, keywordId: string): Promise<void>
+  listAllCategoryKeywords(): Promise<any[]>
+  getCategorySubscriberCount(categoryId: string): Promise<number>
   listActiveUnifiedKeywords(): Promise<string[]>
 
   // Master schema
