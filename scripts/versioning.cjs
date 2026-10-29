@@ -261,11 +261,17 @@ async function createApprovedTag(cwd, args) {
     console.log(`All reachable history is associated with the explicitly selected baseline ${version}.`)
   } else {
     if (!plan.proposedVersion) throw new Error('No release-triggering commits exist; there is no version to tag.')
-    version = plan.proposedVersion
+    version = approvedVersion || plan.proposedVersion
+    if (!parseSemver(version)) {
+      throw new Error(`Invalid version: ${version}. Use vMAJOR.MINOR.PATCH.`)
+    }
     if (initialVersion) throw new Error('--initial can only be used when no annotated SemVer release tag exists.')
-  }
-  if (approvedVersion !== version) {
-    throw new Error(`Explicit approval required: rerun with --approve ${version}.`)
+    if (!approvedVersion) {
+      throw new Error(`Explicit approval required: rerun with --approve ${plan.proposedVersion}.`)
+    }
+    if (approvedVersion !== plan.proposedVersion) {
+      console.log(`Warning: overriding proposed version ${plan.proposedVersion} with ${approvedVersion}.`)
+    }
   }
   if (runGit(['tag', '--list', version], { cwd })) {
     throw new Error(`Tag ${version} already exists.`)
