@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express'
-import { body, validationResult } from 'express-validator'
+import { body, param, validationResult } from 'express-validator'
 import { createJobRepository } from '../database/db'
 
 const router = Router()
@@ -107,6 +107,16 @@ router.get('/categories', async (_req: Request, res: Response) => {
   res.json(categories)
 })
 
+router.get(
+  '/categories/:id/subscribers',
+  [param('id').isUUID()],
+  async (req: Request, res: Response) => {
+    if (!validate(req, res)) return
+    const count = await repo.getCategorySubscriberCount(req.params.id)
+    res.json({ category_id: req.params.id, subscriber_count: count })
+  }
+)
+
 router.post(
   '/categories',
   body('name').isString().notEmpty(),
@@ -133,6 +143,21 @@ router.post(
     const { category_id, keyword_id, weight, enabled } = req.body
     await repo.upsertCategoryKeyword({ category_id, keyword_id, weight, enabled })
     res.status(201).json({ category_id, keyword_id, weight, enabled: enabled ?? true })
+  }
+)
+
+router.get('/category-keywords', async (_req: Request, res: Response) => {
+  const links = await repo.listAllCategoryKeywords()
+  res.json(links)
+})
+
+router.delete(
+  '/category-keywords/:categoryId/:keywordId',
+  [param('categoryId').isUUID(), param('keywordId').isUUID()],
+  async (req: Request, res: Response) => {
+    if (!validate(req, res)) return
+    await repo.deleteCategoryKeyword(req.params.categoryId, req.params.keywordId)
+    res.json({ success: true })
   }
 )
 

@@ -1098,6 +1098,26 @@ export class JobRepository implements IJobRepository {
     await this.execute(`DELETE FROM keywords WHERE id = ?`, [id])
   }
 
+  async listAllCategoryKeywords(): Promise<any[]> {
+    return this.query<any>(`
+      SELECT ck.category_id, c.name AS category_name, c.slug AS category_slug,
+             ck.keyword_id, k.name AS keyword_name, k.slug AS keyword_slug,
+             ck.weight, ck.enabled, ck.created_at, ck.updated_at
+      FROM category_keywords ck
+      JOIN categories c ON c.id = ck.category_id
+      JOIN keywords k ON k.id = ck.keyword_id
+      ORDER BY c.name ASC, k.name ASC
+    `)
+  }
+
+  async getCategorySubscriberCount(categoryId: string): Promise<number> {
+    const rows = await this.query<any>(
+      `SELECT COUNT(*) as count FROM user_categories WHERE category_id = ? AND enabled = 1`,
+      [categoryId]
+    )
+    return rows[0]?.count ?? 0
+  }
+
   // ── Category ↔ Keyword links ──
   async listCategoryKeywords(categoryId: string): Promise<any[]> {
     return this.query<any>(`
