@@ -166,7 +166,9 @@ export async function ensureDatabase(): Promise<void> {
       category_id CHAR(36) NOT NULL,
       keyword_id CHAR(36) NOT NULL,
       weight DECIMAL(3,2) NULL,
+      enabled TINYINT(1) DEFAULT 1,
       created_at DATETIME NOT NULL,
+      updated_at DATETIME NOT NULL,
       PRIMARY KEY (category_id, keyword_id),
       FOREIGN KEY (category_id) REFERENCES categories(id) ON DELETE CASCADE,
       FOREIGN KEY (keyword_id) REFERENCES keywords(id) ON DELETE CASCADE
@@ -224,6 +226,21 @@ export async function ensureDatabase(): Promise<void> {
     await driver.query(`ALTER TABLE sources ADD COLUMN code_id VARCHAR(100) UNIQUE NULL AFTER name`)
   }
 
+  // Add enabled and updated_at columns to category_keywords if missing
+  const existingEnabledCol = await driver.query<any>(`
+    SELECT COLUMN_NAME FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'category_keywords' AND COLUMN_NAME = 'enabled'
+  `)
+  if (existingEnabledCol.rows.length === 0) {
+    await driver.query(`ALTER TABLE category_keywords ADD COLUMN enabled TINYINT(1) DEFAULT 1 AFTER weight`)
+  }
+  const existingUpdatedAtCol = await driver.query<any>(`
+    SELECT COLUMN_NAME FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'category_keywords' AND COLUMN_NAME = 'updated_at'
+  `)
+  if (existingUpdatedAtCol.rows.length === 0) {
+    await driver.query(`ALTER TABLE category_keywords ADD COLUMN updated_at DATETIME NOT NULL DEFAULT '2000-01-01 00:00:00' AFTER created_at`)
+  }
 
   const existingActiveTokenCol = await driver.query<any>(`
     SELECT COLUMN_NAME FROM information_schema.COLUMNS
