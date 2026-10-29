@@ -17,7 +17,8 @@
    - JWT_SECRET (32+ chars)
    - ADMIN_EMAIL, ADMIN_PASSWORD (seeded on first run)
 
-3. Create the database:
+3. Create the database (optional):
+   The API server auto-creates the `map_rezi` database and seeds the admin user on startup, so this step is only needed if you want to pre-create it manually:
    mysql -u root -p -e "CREATE DATABASE IF NOT EXISTS map_rezi;"
 
 4. Build:
