@@ -13,6 +13,9 @@ class MockConnection implements IDbConnection {
       if (sql.includes('content_hash')) {
         return { rows: [] as T, fields: [] }  // content_hash doesn't exist
       }
+      if (sql.includes('code_id')) {
+        return { rows: [{ COLUMN_NAME: 'code_id' }] as T, fields: [] }  // code_id already exists
+      }
     }
     return { rows: [] as T, fields: [] }
   }
@@ -103,6 +106,9 @@ describe('database initialization and admin seeding', () => {
     vi.spyOn(mockDriver, 'query').mockImplementation(async (sql: string) => {
       if (sql.includes('information_schema.COLUMNS') && sql.includes('working_mode')) {
         return { rows: [{ COLUMN_NAME: 'working_mode' }], fields: [] }
+      }
+      if (sql.includes('information_schema.COLUMNS') && sql.includes('code_id')) {
+        return { rows: [{ COLUMN_NAME: 'code_id' }], fields: [] }
       }
       return { rows: [], fields: [] }
     })
