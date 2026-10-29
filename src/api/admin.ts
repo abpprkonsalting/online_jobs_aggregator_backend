@@ -222,4 +222,16 @@ router.post(
   }
 )
 
+router.post(
+  '/sources/:id/trigger',
+  requireRole('admin'),
+  [param('id').isUUID()],
+  async (req: Request, res: Response) => {
+    if (!validate(req, res)) return
+    const orchestrator = getOrchestrator()
+    await orchestrator.triggerSourceFetch(req.params.id)
+    res.json({ status: 'triggered' })
+  }
+)
+
 export default router

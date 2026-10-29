@@ -127,6 +127,44 @@ export class JobOrchestrator {
     }
   }
 
+  /**
+   * Trigger an immediate on-demand fetch for a single source, independent of its working_mode.
+   * Pauses the regular cycle, runs the source's full fetch cycle (fetch → transform → save),
+   * then resumes the regular cycle.
+   */
+  async triggerSourceFetch(sourceId: string): Promise<void> {
+    // Pause the regular cycle (waits for any in-flight cycle to complete)
+    await this.stop()
+
+    try {
+      const sources = await this.loadSources()
+      const source = sources.find((s) => s.id === sourceId)
+      if (!source) {
+        throw new Error(`Source ${sourceId} not found`)
+      }
+
+      const ctx = this.buildCtx({ kind: 'proactive', sourceId: source.id, id: `trigger:${source.id}` })
+
+      if (source.working_mode === 'passive' || source.working_mode === 'both') {
+        const pairs = await this.repo.listSourceGeographicAreas()
+        const relevantPairs = pairs.filter((p) => p.source_id === sourceId)
+        for (const pair of relevantPairs) {
+          if (this.stop$) return
+          await this.runPairCycle(pair, ctx)
+        }
+      }
+
+      if (source.working_mode === 'proactive' || source.working_mode === 'both') {
+        if (this.stop$) return
+        const keywords = await this.repo.listActiveUnifiedKeywords()
+        await this.runProactiveSourceCycle(source, keywords, ctx)
+      }
+    } finally {
+      // Resume the regular cycle
+      await this.start()
+    }
+  }
+
   /** One scheduler tick: if idle, select exactly one eligible work item and run it. */
   private async tick(): Promise<void> {
     if (this.stop$) return
