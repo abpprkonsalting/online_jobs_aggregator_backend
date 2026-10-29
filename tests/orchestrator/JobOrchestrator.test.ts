@@ -101,7 +101,13 @@ describe('JobOrchestrator', () => {
 
     vi.resetModules()
     const { JobOrchestrator } = await import('../../src/orchestrator/JobOrchestrator')
-    return new JobOrchestrator(repo)
+    const { ReziJobSource } = await import('../../src/sources/rezi/ReziJobSource')
+    const orchestrator = new JobOrchestrator(repo)
+    // Register mock adapter for test source IDs so auto-discovery finds them
+    for (const id of ['source-1', 'source-2', 'source-3']) {
+      orchestrator.registerAdapter(id, ReziJobSource as any)
+    }
+    return orchestrator
   }
 
   async function stopOrchestrator(orchestrator: InstanceType<(typeof import('../../src/orchestrator/JobOrchestrator'))['JobOrchestrator']>) {
