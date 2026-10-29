@@ -220,7 +220,8 @@ export async function ensureDatabase(): Promise<void> {
     WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'refresh_tokens' AND COLUMN_NAME = 'active_token'
   `)
   if (existingActiveTokenCol.rows.length === 0) {
-    await driver.query(`ALTER TABLE refresh_tokens ADD COLUMN active_token CHAR(36) AS (IF(revoked_at IS NULL, user_id, NULL)) STORED`)
+    await driver.query(`ALTER TABLE refresh_tokens ADD COLUMN active_token CHAR(36) NULL`)
+    await driver.query(`UPDATE refresh_tokens SET active_token = user_id WHERE revoked_at IS NULL`)
   }
 
   const existingActiveTokenIdx = await driver.query<any>(`

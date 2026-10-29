@@ -59,9 +59,9 @@ export class JobRepository implements IJobRepository {
     const id = crypto.randomUUID()
     const now = new Date()
     await this.execute(
-      `INSERT INTO refresh_tokens (id, user_id, token_hash, expires_at, revoked_at, created_at)
-       VALUES (?, ?, ?, ?, NULL, ?)`,
-      [id, userId, tokenHash, expiresAt, now]
+      `INSERT INTO refresh_tokens (id, user_id, token_hash, active_token, expires_at, revoked_at, created_at)
+       VALUES (?, ?, ?, ?, ?, NULL, ?)`,
+      [id, userId, tokenHash, userId, expiresAt, now]
     )
   }
 
@@ -74,7 +74,7 @@ export class JobRepository implements IJobRepository {
   }
 
   async revokeRefreshToken(tokenId: string): Promise<void> {
-    await this.execute(`UPDATE refresh_tokens SET revoked_at = ? WHERE id = ?`, [new Date(), tokenId])
+    await this.execute(`UPDATE refresh_tokens SET revoked_at = ?, active_token = NULL WHERE id = ?`, [new Date(), tokenId])
   }
 
   async findJobs(): Promise<any[]> {
