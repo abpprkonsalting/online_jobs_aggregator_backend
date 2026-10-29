@@ -7,6 +7,7 @@ export async function ensureDatabase(): Promise<void> {
     `CREATE TABLE IF NOT EXISTS sources (
       id CHAR(36) PRIMARY KEY,
       name VARCHAR(100) NOT NULL UNIQUE,
+      code_id VARCHAR(100) UNIQUE NULL,
       type ENUM('api','scrape','hybrid') NOT NULL,
       config JSON NOT NULL,
       enabled TINYINT(1) DEFAULT 1,
@@ -214,6 +215,15 @@ export async function ensureDatabase(): Promise<void> {
   if (existingCols.rows.length === 0) {
     await driver.query(`ALTER TABLE sources ADD COLUMN working_mode ENUM('passive','proactive','both') NOT NULL DEFAULT 'both' AFTER type`)
   }
+
+  const existingCodeIdCol = await driver.query<any>(`
+    SELECT COLUMN_NAME FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'sources' AND COLUMN_NAME = 'code_id'
+  `)
+  if (existingCodeIdCol.rows.length === 0) {
+    await driver.query(`ALTER TABLE sources ADD COLUMN code_id VARCHAR(100) UNIQUE NULL AFTER name`)
+  }
+
 
   const existingActiveTokenCol = await driver.query<any>(`
     SELECT COLUMN_NAME FROM information_schema.COLUMNS
