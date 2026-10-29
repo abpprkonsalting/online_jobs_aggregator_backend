@@ -559,9 +559,13 @@ export class JobOrchestrator {
   }
 
   private async fetchFromAdapter(ctx: JobSourceContext, area: GeographicArea): Promise<any> {
-    const AdapterClass = this.sourceAdapters.get(ctx.source.id)
+    const codeId = ctx.source.codeId
+    if (!codeId) {
+      throw new Error(`No source adapter registered for source ${ctx.source.id} (${ctx.source.name}) with code_id ${codeId}`)
+    }
+    const AdapterClass = this.sourceAdapters.get(codeId)
     if (!AdapterClass) {
-      throw new Error(`No source adapter registered for source ${ctx.source.id} (${ctx.source.name})`)
+      throw new Error(`No source adapter registered for source ${ctx.source.id} (${ctx.source.name}) with code_id ${codeId}`)
     }
     const adapter = new (AdapterClass as new (ctx: JobSourceContext) => JobSource)(ctx)
     try {
@@ -576,9 +580,13 @@ export class JobOrchestrator {
   }
 
   private async fetchFromAdapterByKeywords(ctx: JobSourceContext, keywords: string[]): Promise<any> {
-    const AdapterClass = this.sourceAdapters.get(ctx.source.id)
+    const codeId = ctx.source.codeId
+    if (!codeId) {
+      throw new Error(`No source adapter registered for source ${ctx.source.id} (${ctx.source.name}) with code_id ${codeId}`)
+    }
+    const AdapterClass = this.sourceAdapters.get(codeId)
     if (!AdapterClass) {
-      throw new Error(`No source adapter registered for source ${ctx.source.id} (${ctx.source.name})`)
+      throw new Error(`No source adapter registered for source ${ctx.source.id} (${ctx.source.name}) with code_id ${codeId}`)
     }
     const adapter = new (AdapterClass as new (ctx: JobSourceContext) => JobSource)(ctx)
     if (!adapter.fetchByKeywords) {
@@ -601,6 +609,7 @@ export class JobOrchestrator {
     const rows = await this.repo.listSources()
     const sources: SourceConfig[] = rows.map((row: any) => ({
       id: row.id,
+      codeId: row.code_id ?? null,
       name: row.name,
       type: row.type,
       working_mode: (row.working_mode ?? 'both') as 'passive' | 'proactive' | 'both',
@@ -620,8 +629,8 @@ export class JobOrchestrator {
       if (!this.rateLimiters.has(source.id)) {
         this.rateLimiters.set(source.id, createRateLimiter(source.config))
       }
-      if (!this.sourceAdapters.has(source.id)) {
-        logger.warn(`No source adapter registered for source ${source.id} (${source.name})`)
+      if (!source.codeId || !this.sourceAdapters.has(source.codeId)) {
+        logger.warn(`No source adapter registered for source ${source.id} (${source.name}) with code_id ${source.codeId}`)
       }
     }
 
@@ -680,13 +689,13 @@ export class JobOrchestrator {
               exported !== JobSource
             ) {
               const className = exported.name
-              const sourceId = className.replace(/JobSource$/i, '').toLowerCase()
-              if (this.sourceAdapters.has(sourceId)) {
-                logger.warn(`Duplicate source adapter for ${sourceId}: ${className}, skipping`)
+              const codeId = className
+              if (this.sourceAdapters.has(codeId)) {
+                logger.warn(`Duplicate source adapter code_id "${codeId}": ${className}, skipping`)
                 continue
               }
-              this.sourceAdapters.set(sourceId, exported)
-              logger.info(`Discovered source adapter: ${className} -> sourceId "${sourceId}"`)
+              this.sourceAdapters.set(codeId, exported)
+              logger.info(`Discovered source adapter: ${className} -> code_id "${codeId}"`)
             }
           }
         } catch (err) {

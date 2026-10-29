@@ -43,6 +43,7 @@ vi.mock('../../src/transform/engine', () => ({
 const sourceRows = (...modes: Array<'passive' | 'proactive' | 'both'>) =>
   modes.map((working_mode, index) => ({
     id: `source-${index + 1}`,
+    code_id: 'ReziJobSource',
     name: `Source ${index + 1}`,
     type: 'api',
     working_mode,
@@ -103,10 +104,8 @@ describe('JobOrchestrator', () => {
     const { JobOrchestrator } = await import('../../src/orchestrator/JobOrchestrator')
     const { ReziJobSource } = await import('../../src/sources/rezi/ReziJobSource')
     const orchestrator = new JobOrchestrator(repo)
-    // Register mock adapter for test source IDs so auto-discovery finds them
-    for (const id of ['source-1', 'source-2', 'source-3']) {
-      orchestrator.registerAdapter(id, ReziJobSource as any)
-    }
+    // Register mock adapter under its class name (code_id) so auto-discovery finds it
+    orchestrator.registerAdapter('ReziJobSource', ReziJobSource as any)
     return orchestrator
   }
 

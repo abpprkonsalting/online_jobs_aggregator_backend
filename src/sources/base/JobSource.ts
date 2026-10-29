@@ -21,6 +21,7 @@ export interface FetchResult {
 
 export interface SourceConfig {
   id: string
+  codeId?: string
   name: string
   type: 'api' | 'scrape' | 'hybrid'
   working_mode: 'passive' | 'proactive' | 'both'
