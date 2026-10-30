@@ -182,6 +182,24 @@ describe('HTTP API routers', () => {
       expect(repo.updateUserLastLogin).toHaveBeenCalledWith(userId)
     })
 
+    it('returns an API error for refresh-token persistence failures without an unhandled rejection', async () => {
+      repo.getUserByEmail.mockResolvedValue({
+        id: userId,
+        email: 'user@example.test',
+        role: 'user',
+        is_active: 1,
+        password_hash: await hashPassword('correct horse battery staple'),
+      })
+      repo.createRefreshToken.mockRejectedValueOnce(new Error('database write failed'))
+
+      const response = await request(createApp())
+        .post('/auth/login')
+        .send({ email: 'user@example.test', password: 'correct horse battery staple' })
+
+      expect(response.status).toBe(500)
+      expect(response.body).toEqual({ error: 'Login is temporarily unavailable' })
+    })
+
     it.each([
       ['unknown', null],
       ['inactive', { id: userId, email: 'user@example.test', role: 'user', is_active: 0 }],
