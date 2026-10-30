@@ -14,6 +14,13 @@ router.patch('/me/notification-preferences', requireAuthStrict, [body('opt_in').
   res.json({ opt_in: optIn })
 })
 
+router.get('/me/notification-preferences', requireAuthStrict, async (req: AuthRequest, res: Response) => {
+  const users = await query<any>(
+    'SELECT notification_opt_in FROM users WHERE id = ?', [req.auth!.sub],
+  )
+  res.json({ opt_in: Boolean(users[0]?.notification_opt_in) })
+})
+
 router.get('/me/notifications', requireAuthStrict, async (req: AuthRequest, res: Response) => {
   const notifications = await query<any>(
     'SELECT id, job_count, jobs, sent_at FROM notification_history WHERE user_id = ? ORDER BY sent_at DESC', [req.auth!.sub],
