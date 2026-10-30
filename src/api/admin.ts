@@ -3,9 +3,53 @@ import { body, param, query, validationResult } from 'express-validator'
 import { requireRole } from '../middleware/auth'
 import { createJobRepository } from '../database/db'
 import { getOrchestrator } from '../orchestrator/JobOrchestrator'
+import { getConfig } from '../config'
+import { createNotificationChannels } from '../services/notifications/channel-factory'
+import { logger } from '../utils/logger'
 
 const router = Router()
 const repo = createJobRepository()
+
+router.post(
+  '/notifications/test',
+  [body('email').isEmail().normalizeEmail()],
+  async (req: Request, res: Response) => {
+    if (!validate(req, res)) return
+
+    let channels
+    try {
+      channels = createNotificationChannels(getConfig())
+    } catch (error) {
+      logger.error('Test notification channel configuration is invalid', { error: (error as Error).message })
+      res.status(503).json({ error: 'Notification delivery is not configured correctly.' })
+      return
+    }
+    if (channels.length === 0) {
+      res.status(503).json({ error: 'No notification channels are enabled.' })
+      return
+    }
+
+    const delivered: string[] = []
+    for (const channel of channels) {
+      try {
+        await channel.send({
+          to: req.body.email,
+          subject: 'Map Rezi email delivery test',
+          html: '<p>This test message confirms that the configured Map Rezi notification channel can deliver email.</p>',
+        })
+        delivered.push(channel.name)
+      } catch (error) {
+        logger.error('Test notification delivery failed', { channel: channel.name, error: (error as Error).message })
+      }
+    }
+
+    if (delivered.length === 0) {
+      res.status(502).json({ error: 'Email delivery failed. Check the backend service logs and SMTP settings.' })
+      return
+    }
+    res.json({ success: true, channels: delivered })
+  },
+)
 
 function validate(req: Request, res: Response): boolean {
   const errors = validationResult(req)
