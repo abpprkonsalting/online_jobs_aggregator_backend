@@ -117,6 +117,16 @@ describe('Phase 3 API endpoints', () => {
   })
 
   describe('user notification endpoints', () => {
+    it('returns the authenticated user notification preference', async () => {
+      query.mockResolvedValueOnce([{ notification_opt_in: 1 }])
+      const response = await request(app())
+        .get('/api/users/me/notification-preferences')
+        .set('Authorization', `Bearer ${token(userId)}`)
+      expect(response.status).toBe(200)
+      expect(response.body).toEqual({ opt_in: true })
+      expect(query).toHaveBeenCalledWith('SELECT notification_opt_in FROM users WHERE id = ?', [userId])
+    })
+
     it('updates only the authenticated user notification preference', async () => {
       const response = await request(app())
         .patch('/api/users/me/notification-preferences')
