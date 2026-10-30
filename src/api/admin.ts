@@ -16,6 +16,32 @@ function validate(req: Request, res: Response): boolean {
   return true
 }
 
+function polygonBounds(geometry: unknown): { bbox: [number, number, number, number]; zoom: number } | null {
+  if (!geometry || typeof geometry !== 'object') return null
+  const value = geometry as { type?: unknown; coordinates?: unknown }
+  if (value.type !== 'Polygon' || !Array.isArray(value.coordinates) || value.coordinates.length === 0) return null
+  const points: number[][] = []
+  for (const ring of value.coordinates as unknown[]) {
+    if (!Array.isArray(ring) || ring.length < 4) return null
+    for (const point of ring) {
+      if (!Array.isArray(point) || point.length < 2 ||
+          typeof point[0] !== 'number' || !Number.isFinite(point[0]) || point[0] < -180 || point[0] > 180 ||
+          typeof point[1] !== 'number' || !Number.isFinite(point[1]) || point[1] < -90 || point[1] > 90) return null
+      points.push(point as number[])
+    }
+    const first = ring[0] as number[]
+    const last = ring[ring.length - 1] as number[]
+    if (first[0] !== last[0] || first[1] !== last[1]) return null
+  }
+  if (points.length < 4) return null
+  const lngs = points.map((point) => point[0])
+  const lats = points.map((point) => point[1])
+  const bbox: [number, number, number, number] = [Math.min(...lngs), Math.min(...lats), Math.max(...lngs), Math.max(...lats)]
+  const span = Math.max(bbox[2] - bbox[0], bbox[3] - bbox[1])
+  const zoom = span === 0 ? 20 : Math.max(1, Math.min(20, Math.floor(Math.log2(360 / span))))
+  return { bbox, zoom }
+}
+
 // ── Sources CRUD ──
 router.get('/sources', async (_req: Request, res: Response) => {
   const sources = await repo.listSources()
@@ -86,6 +112,15 @@ router.delete(
 )
 
 // ── Geographic Areas CRUD ──
+router.post('/geographic-areas/from-geometry', (req: Request, res: Response) => {
+  const result = polygonBounds(req.body?.geometry ?? req.body)
+  if (!result) {
+    res.status(400).json({ error: 'Invalid geometry' })
+    return
+  }
+  res.json(result)
+})
+
 router.get('/geographic-areas', async (_req: Request, res: Response) => {
   const areas = await repo.listGeographicAreas()
   res.json(areas)
