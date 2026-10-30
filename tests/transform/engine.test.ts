@@ -4,6 +4,13 @@ import { TransformEngine } from '../../src/transform/engine'
 import type { TransformConfig } from '../../src/transform/types'
 import reziConfig from '../../src/transform/rezi.transform.json'
 
+const { dedupDriver, createDedupDriver } = vi.hoisted(() => ({
+  dedupDriver: { isDuplicate: vi.fn() },
+  createDedupDriver: vi.fn((): any => null),
+}))
+
+vi.mock('../../src/ai-dedup', () => ({ createAiDedupDriver: createDedupDriver }))
+
 const transformConfig = reziConfig as TransformConfig
 
 function createLogger() {
@@ -45,6 +52,7 @@ describe('TransformEngine', () => {
   let repo: JobRepository
 
   beforeEach(() => {
+    createDedupDriver.mockReturnValue(null)
     repo = new JobRepository()
   })
 
@@ -53,6 +61,7 @@ describe('TransformEngine', () => {
       jobsNew: 1,
       jobsUpdated: 0,
       jobIds: new Map([['101', 'persisted-job-101']]),
+      newJobIds: ['persisted-job-101'],
     }))
     vi.spyOn(repo, 'listSkills').mockResolvedValue([])
     vi.spyOn(repo, 'upsertSkillsBatch').mockResolvedValue()
@@ -129,6 +138,7 @@ describe('TransformEngine', () => {
       jobsNew: 0,
       jobsUpdated: 1,
       jobIds: new Map([['101', 'existing-job-id']]),
+      newJobIds: [],
     })
     vi.spyOn(repo, 'listSkills').mockResolvedValue([{ id: 'skill-ts', name: 'TypeScript', slug: 'typescript' }])
     const syncJobSkills = vi.spyOn(repo, 'syncJobSkillsBatch').mockResolvedValue()
@@ -148,6 +158,7 @@ describe('TransformEngine', () => {
       jobsNew: 0,
       jobsUpdated: jobs.length,
       jobIds: new Map(jobs.map((j) => [j.external_id, 'existing-job'])),
+      newJobIds: [],
     }))
     vi.spyOn(repo, 'listSkills').mockResolvedValue([])
     vi.spyOn(repo, 'upsertSkillsBatch').mockResolvedValue()
@@ -167,5 +178,35 @@ describe('TransformEngine', () => {
     expect(syncJobSkills).toHaveBeenCalled()
     expect(syncJobCategories).toHaveBeenCalled()
     expect(syncLocations).toHaveBeenCalled()
+  })
+
+  it('maps a cross-source duplicate to its canonical job and merges associations without replacing them', async () => {
+    const canonical = {
+      id: 'canonical-job',
+      source_id: 'other-source',
+      external_id: 'other-101',
+      title: 'Platform Engineer',
+      organization: 'Example Co',
+      job_url: 'https://jobs.example.test/101',
+    }
+    vi.spyOn(repo, 'findCrossSourceCandidates').mockResolvedValue([canonical])
+    const aliasSpy = vi.spyOn(repo, 'linkJobSourceAlias').mockResolvedValue()
+    const mergeSpy = vi.spyOn(repo, 'mergeJobAssociations').mockResolvedValue()
+    const upsertSpy = vi.spyOn(repo, 'upsertJobsBatch')
+    vi.spyOn(repo, 'listSkills').mockResolvedValue([])
+    vi.spyOn(repo, 'upsertSkillsBatch').mockResolvedValue()
+    vi.spyOn(repo, 'listCategories').mockResolvedValue([])
+    vi.spyOn(repo, 'upsertCategoriesBatch').mockResolvedValue()
+    vi.spyOn(repo, 'listCities').mockResolvedValue([])
+    dedupDriver.isDuplicate.mockResolvedValue(true)
+    createDedupDriver.mockReturnValue(dedupDriver as any)
+
+    const engine = new TransformEngine(repo, transformConfig, 'source-1', createLogger())
+    const result = await engine.run([rawJob()])
+
+    expect(aliasSpy).toHaveBeenCalledWith('source-1', '101', 'canonical-job')
+    expect(upsertSpy).not.toHaveBeenCalled()
+    expect(mergeSpy).toHaveBeenCalledWith('canonical-job', expect.any(Array), expect.any(Array), expect.any(Array))
+    expect(result.newJobIds).toEqual([])
   })
 })

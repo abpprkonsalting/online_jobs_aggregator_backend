@@ -394,6 +394,7 @@ export class JobOrchestrator {
     let jobsFound = rawJobs.length
     let jobsSavedNew = 0
     let jobsSavedUpdated = 0
+    let newJobIds: string[] = []
 
     try {
       const { TransformEngine } = await import('../transform/engine')
@@ -404,6 +405,7 @@ export class JobOrchestrator {
       jobsFound = transformResult.jobsFound
       jobsSavedNew = transformResult.jobsSavedNew
       jobsSavedUpdated = transformResult.jobsSavedUpdated
+      newJobIds = transformResult.newJobIds ?? []
       transformWarnings.push(...transformResult.warnings)
     } catch (err) {
       const error = err as Error
@@ -424,6 +426,12 @@ export class JobOrchestrator {
       metadata: result?.metadata ?? {},
       warnings: transformWarnings,
     })
+
+    if (newJobIds.length) {
+      const { sendNewJobNotifications } = await import('../services/notifications')
+      try { await sendNewJobNotifications(newJobIds) }
+      catch (error) { logger.error('Job notification batch failed', { fetchRunId, error: (error as Error).message }) }
+    }
 
     const nextRunAt = new Date(Date.now() + this.config.pollIntervalMs)
     await this.repo.updateSourceTimestamps(pair.source_id, new Date(), nextRunAt)
@@ -515,6 +523,7 @@ export class JobOrchestrator {
     let jobsFound = rawJobs.length
     let jobsSavedNew = 0
     let jobsSavedUpdated = 0
+    let newJobIds: string[] = []
 
     try {
       const { TransformEngine } = await import('../transform/engine')
@@ -525,6 +534,7 @@ export class JobOrchestrator {
       jobsFound = transformResult.jobsFound
       jobsSavedNew = transformResult.jobsSavedNew
       jobsSavedUpdated = transformResult.jobsSavedUpdated
+      newJobIds = transformResult.newJobIds ?? []
       transformWarnings.push(...transformResult.warnings)
     } catch (err) {
       const error = err as Error
@@ -545,6 +555,12 @@ export class JobOrchestrator {
       metadata: result?.metadata ?? {},
       warnings: transformWarnings,
     })
+
+    if (newJobIds.length) {
+      const { sendNewJobNotifications } = await import('../services/notifications')
+      try { await sendNewJobNotifications(newJobIds) }
+      catch (error) { logger.error('Job notification batch failed', { fetchRunId, error: (error as Error).message }) }
+    }
 
     await this.repo.updateSourceTimestamps(source.id, new Date(), null)
 

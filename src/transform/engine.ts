@@ -2,6 +2,8 @@ import { IJobRepository } from '../persistence/IJobRepository'
 import { EntityResolver } from './resolver'
 import type { TransformConfig, TransformResult } from './types'
 import crypto from 'crypto'
+import { getConfig } from '../config'
+import { createAiDedupDriver } from '../ai-dedup'
 
 interface TransformFieldMapping {
   source: string
@@ -216,11 +218,36 @@ export class TransformEngine {
       }
     }
 
-    // Batch upsert jobs with content hash no-op detection
-    let upsertResult = { jobsNew: 0, jobsUpdated: 0, jobIds: new Map<string, string>() }
-    if (jobRecords.length > 0) {
-      upsertResult = await this.repo.upsertJobsBatch(jobRecords.map((jr) => jr.record as any))
+    // Consolidate records against cross-source candidates before persistence.
+    const aliasIds = new Map<string, string>()
+    const config = getConfig()
+    const driver = createAiDedupDriver(config)
+    if (driver) {
+      try {
+        for (const item of jobRecords) {
+          const record = item.record as any
+          const candidates = await this.repo.findCrossSourceCandidates(record)
+          for (const candidate of candidates) {
+            if (await driver.isDuplicate(record, candidate)) {
+              aliasIds.set(String(record.external_id), candidate.id)
+              await this.repo.linkJobSourceAlias(String(record.source_id), String(record.external_id), candidate.id)
+              break
+            }
+          }
+        }
+      } catch (error) {
+        warnings.push(`AI deduplication unavailable; saving source records separately: ${(error as Error).message}`)
+        this.logger.warn('AI deduplication failed; continuing without deduplication', { error: (error as Error).message })
+      }
     }
+
+    // Batch upsert non-alias jobs with content hash no-op detection.
+    let upsertResult = { jobsNew: 0, jobsUpdated: 0, jobIds: new Map<string, string>(), newJobIds: [] as string[] }
+    const recordsToPersist = jobRecords.filter((jr) => !aliasIds.has(String(jr.record.external_id)))
+    if (recordsToPersist.length > 0) {
+      upsertResult = await this.repo.upsertJobsBatch(recordsToPersist.map((jr) => jr.record as any))
+    }
+    for (const [externalId, canonicalId] of aliasIds) upsertResult.jobIds.set(externalId, canonicalId)
     jobsSavedNew = upsertResult.jobsNew
     jobsSavedUpdated = upsertResult.jobsUpdated
 
@@ -228,6 +255,7 @@ export class TransformEngine {
       jobsFound,
       jobsSavedNew,
       jobsSavedUpdated,
+      newJobIds: upsertResult.newJobIds,
       warnings: warnings.length,
     })
 
@@ -239,6 +267,7 @@ export class TransformEngine {
 
     // Sync child entities for upserted jobs only
     const upsertedJobIds = new Set<string>()
+    const aliasedCanonicalIds = new Set(aliasIds.values())
     for (const extId of jobIdMap.keys()) {
       const jobId = jobIdMap.get(extId)
       if (jobId) upsertedJobIds.add(jobId)
@@ -308,17 +337,22 @@ export class TransformEngine {
       const categories = jobCategoriesMap.get(jobId) ?? []
       const locations = jobLocationsMap.get(jobId) ?? []
 
-      await Promise.all([
-        this.repo.syncJobSkillsBatch(jobId, skills),
-        this.repo.syncJobCategoriesBatch(jobId, categories),
-        this.repo.syncLocationsBatch(jobId, locations),
-      ])
+      if (aliasedCanonicalIds.has(jobId)) {
+        await this.repo.mergeJobAssociations(jobId, skills, categories, locations)
+      } else {
+        await Promise.all([
+          this.repo.syncJobSkillsBatch(jobId, skills),
+          this.repo.syncJobCategoriesBatch(jobId, categories),
+          this.repo.syncLocationsBatch(jobId, locations),
+        ])
+      }
     }
 
     return {
       jobsFound,
       jobsSavedNew,
       jobsSavedUpdated,
+      newJobIds: upsertResult.newJobIds,
       warnings,
       entities: allEntities,
     }

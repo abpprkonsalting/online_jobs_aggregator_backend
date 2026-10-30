@@ -122,6 +122,7 @@ describe('JobOrchestrator', () => {
       jobsFound: 0,
       jobsSavedNew: 0,
       jobsSavedUpdated: 0,
+      newJobIds: [],
       warnings: [],
     })
 
@@ -156,6 +157,7 @@ describe('JobOrchestrator', () => {
       jobsFound: 1,
       jobsSavedNew: 1,
       jobsSavedUpdated: 0,
+      newJobIds: [],
       warnings: [],
     })
 
@@ -179,7 +181,7 @@ describe('JobOrchestrator', () => {
     repo.listSourceGeographicAreas.mockResolvedValue([pair('source-1', 'area-1')])
     const pending = deferred<{ rawJobs: unknown[]; warnings: string[] }>()
     adapterFetch.mockReturnValue(pending.promise)
-    transformRun.mockResolvedValue({ jobsFound: 0, jobsSavedNew: 0, jobsSavedUpdated: 0, warnings: [] })
+    transformRun.mockResolvedValue({ jobsFound: 0, jobsSavedNew: 0, jobsSavedUpdated: 0, newJobIds: [], warnings: [] })
 
     // Start without awaiting - the first tick will run the fetch and pause on the pending promise
     const startPromise = orchestrator.start()
@@ -210,7 +212,7 @@ describe('JobOrchestrator', () => {
     repo.listActiveUnifiedKeywords.mockResolvedValue(['typescript', 'node'])
     adapterFetch.mockResolvedValue({ rawJobs: [], metadata: {}, warnings: [] })
     adapterFetchByKeywords.mockResolvedValue({ rawJobs: [], metadata: {}, warnings: [] })
-    transformRun.mockResolvedValue({ jobsFound: 0, jobsSavedNew: 0, jobsSavedUpdated: 0, warnings: [] })
+    transformRun.mockResolvedValue({ jobsFound: 0, jobsSavedNew: 0, jobsSavedUpdated: 0, newJobIds: [], warnings: [] })
 
     await orchestrator.start()
 
@@ -253,7 +255,7 @@ describe('JobOrchestrator', () => {
       }
       return { rawJobs: [], warnings: [] }
     })
-    transformRun.mockResolvedValue({ jobsFound: 0, jobsSavedNew: 0, jobsSavedUpdated: 0, warnings: [] })
+    transformRun.mockResolvedValue({ jobsFound: 0, jobsSavedNew: 0, jobsSavedUpdated: 0, newJobIds: [], warnings: [] })
 
     await orchestrator.start()
     await waitForCalls(adapterFetch, 1)
@@ -291,7 +293,7 @@ describe('JobOrchestrator', () => {
       }
       return { rawJobs: [], warnings: [] }
     })
-    transformRun.mockResolvedValue({ jobsFound: 0, jobsSavedNew: 0, jobsSavedUpdated: 0, warnings: [] })
+    transformRun.mockResolvedValue({ jobsFound: 0, jobsSavedNew: 0, jobsSavedUpdated: 0, newJobIds: [], warnings: [] })
 
     await orchestrator.start()
     await waitForCalls(adapterFetch, 1)
@@ -377,7 +379,7 @@ describe('JobOrchestrator', () => {
     repo.listActiveUnifiedKeywords.mockResolvedValue(['typescript'])
     adapterFetch.mockResolvedValue({ rawJobs: [{ obfuscated_id: 8 }], metadata: {}, warnings: [] })
     adapterFetchByKeywords.mockResolvedValue({ rawJobs: [{ obfuscated_id: 9 }], metadata: {}, warnings: [] })
-    transformRun.mockResolvedValue({ jobsFound: 1, jobsSavedNew: 1, jobsSavedUpdated: 0, warnings: [] })
+    transformRun.mockResolvedValue({ jobsFound: 1, jobsSavedNew: 1, jobsSavedUpdated: 0, newJobIds: [], warnings: [] })
 
     await orchestrator.start()
     await waitForCalls(adapterFetch, 1)

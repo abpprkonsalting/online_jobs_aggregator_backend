@@ -97,6 +97,9 @@ describe('database initialization and admin seeding', () => {
     expect(sqlStatements.some((sql) => sql.includes('CREATE TABLE IF NOT EXISTS sources'))).toBe(true)
     expect(sqlStatements.some((sql) => sql.includes('CREATE TABLE IF NOT EXISTS job_categories'))).toBe(true)
     expect(sqlStatements.some((sql) => sql.includes('CREATE TABLE IF NOT EXISTS category_keywords'))).toBe(true)
+    expect(sqlStatements.some((sql) => sql.includes('CREATE TABLE IF NOT EXISTS notification_history'))).toBe(true)
+    expect(sqlStatements.some((sql) => sql.includes('CREATE TABLE IF NOT EXISTS job_source_aliases'))).toBe(true)
+    expect(sqlStatements).toContain('ALTER TABLE users ADD COLUMN notification_opt_in TINYINT(1) NOT NULL DEFAULT 0 AFTER is_active')
     expect(sqlStatements).toContain(
       "ALTER TABLE sources ADD COLUMN working_mode ENUM('passive','proactive','both') NOT NULL DEFAULT 'both' AFTER type",
     )

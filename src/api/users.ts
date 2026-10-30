@@ -2,9 +2,24 @@ import { Router, Request, Response } from 'express'
 import { body, param, validationResult } from 'express-validator'
 import { requireRole, requireAuthStrict, AuthRequest } from '../middleware/auth'
 import { createJobRepository } from '../database/db'
+import { execute, query } from '../database/db'
 
 const router = Router()
 const repo = createJobRepository()
+
+router.patch('/me/notification-preferences', requireAuthStrict, [body('opt_in').isBoolean()], async (req: AuthRequest, res: Response) => {
+  if (!validate(req, res)) return
+  const optIn = req.body.opt_in as boolean
+  await execute('UPDATE users SET notification_opt_in = ?, updated_at = ? WHERE id = ?', [optIn ? 1 : 0, new Date(), req.auth!.sub])
+  res.json({ opt_in: optIn })
+})
+
+router.get('/me/notifications', requireAuthStrict, async (req: AuthRequest, res: Response) => {
+  const notifications = await query<any>(
+    'SELECT id, job_count, jobs, sent_at FROM notification_history WHERE user_id = ? ORDER BY sent_at DESC', [req.auth!.sub],
+  )
+  res.json(notifications.map((item: any) => ({ ...item, jobs: typeof item.jobs === 'string' ? JSON.parse(item.jobs) : item.jobs })))
+})
 
 function validate(req: Request, res: Response): boolean {
   const errors = validationResult(req)

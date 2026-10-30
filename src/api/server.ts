@@ -7,6 +7,7 @@ import adminRoutes from './admin'
 import masterRoutes from './master'
 import versionRoutes from './version'
 import healthRoutes from './health'
+import geocodeRoutes from './geocode'
 import { requireAuthStrict, requireRole } from '../middleware/auth'
 import { ensureDatabase, seedAdminUser } from '../database/migrations'
 import { getConfig } from '../config'
@@ -58,6 +59,7 @@ async function start() {
   app.use('/api/cities', requireAuthStrict, citiesRouter)
   app.use('/api/countries', requireAuthStrict, countriesRouter)
   app.use('/api/health', healthRoutes)
+  app.use('/api/geocode', geocodeRoutes)
 
   app.listen(config.port, () => {
     logger.info('API server listening', { port: config.port })

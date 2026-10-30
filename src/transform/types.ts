@@ -22,6 +22,7 @@ export interface TransformResult {
   jobsFound: number
   jobsSavedNew: number
   jobsSavedUpdated: number
+  newJobIds: string[]
   warnings: string[]
   entities: Array<{
     entity: string

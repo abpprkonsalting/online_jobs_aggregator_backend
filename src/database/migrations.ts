@@ -193,11 +193,38 @@ export async function ensureDatabase(): Promise<void> {
       UNIQUE KEY unique_user_job (user_id, job_id),
       FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
       FOREIGN KEY (job_id) REFERENCES jobs(id) ON DELETE CASCADE
+    )`,
+    `CREATE TABLE IF NOT EXISTS notification_history (
+      id CHAR(36) PRIMARY KEY,
+      user_id CHAR(36) NOT NULL,
+      job_count INT NOT NULL,
+      jobs JSON NOT NULL,
+      sent_at DATETIME NOT NULL,
+      created_at DATETIME NOT NULL,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+      INDEX idx_notification_history_user_sent (user_id, sent_at DESC)
+    )`,
+    `CREATE TABLE IF NOT EXISTS job_source_aliases (
+      source_id CHAR(36) NOT NULL,
+      external_id VARCHAR(100) NOT NULL,
+      job_id CHAR(36) NOT NULL,
+      created_at DATETIME NOT NULL,
+      PRIMARY KEY (source_id, external_id),
+      FOREIGN KEY (source_id) REFERENCES sources(id) ON DELETE CASCADE,
+      FOREIGN KEY (job_id) REFERENCES jobs(id) ON DELETE CASCADE
     )`
   ]
 
   for (const sql of statements) {
     await driver.query(sql)
+  }
+
+  const notificationOptIn = await driver.query<any>(`
+    SELECT COLUMN_NAME FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'users' AND COLUMN_NAME = 'notification_opt_in'
+  `)
+  if (notificationOptIn.rows.length === 0) {
+    await driver.query(`ALTER TABLE users ADD COLUMN notification_opt_in TINYINT(1) NOT NULL DEFAULT 0 AFTER is_active`)
   }
 
   // Add content_hash column to jobs table if missing
