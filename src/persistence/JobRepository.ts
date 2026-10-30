@@ -489,6 +489,7 @@ export class JobRepository implements IJobRepository {
   async upsertSource(data: {
     id: string
     name: string
+    code_id?: string | null
     type: 'api' | 'scrape' | 'hybrid'
     working_mode?: 'passive' | 'proactive' | 'both'
     config: Record<string, unknown>
@@ -497,11 +498,12 @@ export class JobRepository implements IJobRepository {
     const now = new Date()
     const enabled = data.enabled ?? 1
     const working_mode = data.working_mode ?? 'both'
+    const code_id = data.code_id ?? null
     await this.execute(
-      `INSERT INTO sources (id, name, type, working_mode, config, enabled, last_run_at, next_run_at, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?)
-       ON DUPLICATE KEY UPDATE name = VALUES(name), type = VALUES(type), working_mode = VALUES(working_mode), config = VALUES(config), enabled = VALUES(enabled), updated_at = VALUES(updated_at)`,
-      [data.id, data.name, data.type, working_mode, JSON.stringify(data.config), enabled, now, now]
+      `INSERT INTO sources (id, name, code_id, type, working_mode, config, enabled, last_run_at, next_run_at, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?)
+       ON DUPLICATE KEY UPDATE name = VALUES(name), code_id = VALUES(code_id), type = VALUES(type), working_mode = VALUES(working_mode), config = VALUES(config), enabled = VALUES(enabled), updated_at = VALUES(updated_at)`,
+      [data.id, data.name, code_id, data.type, working_mode, JSON.stringify(data.config), enabled, now, now]
     )
   }
 
