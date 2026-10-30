@@ -4,6 +4,7 @@ import { AuthRequest, requireAuthStrict } from '../middleware/auth'
 import { signAccessToken, signRefreshToken, verifyToken, verifyTokenHash, hashToken, hashPassword, verifyPassword } from '../utils/auth'
 import { createJobRepository } from '../database/db'
 import { getConfig } from '../config'
+import { logger } from '../utils/logger'
 
 const router = Router()
 const repo = createJobRepository()
@@ -25,38 +26,43 @@ router.post(
     if (!validate(req, res)) return
     const { email, password } = req.body
 
-    const user = await repo.getUserByEmail(email)
-    if (!user || !user.is_active) {
-      res.status(401).json({ error: 'Invalid credentials' })
-      return
+    try {
+      const user = await repo.getUserByEmail(email)
+      if (!user || !user.is_active) {
+        res.status(401).json({ error: 'Invalid credentials' })
+        return
+      }
+
+      const ok = await verifyPassword(password, user.password_hash)
+      if (!ok) {
+        res.status(401).json({ error: 'Invalid credentials' })
+        return
+      }
+
+      const accessToken = signAccessToken({ id: user.id, email: user.email, role: user.role })
+      const refreshToken = signRefreshToken({ id: user.id, email: user.email, role: user.role })
+      const refreshHash = await hashToken(refreshToken)
+
+      const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
+      await repo.createRefreshToken(user.id, refreshHash, expiresAt)
+      await repo.updateUserLastLogin(user.id)
+
+      res.cookie('refresh_token', refreshToken, {
+        httpOnly: true,
+        secure: config.nodeEnv === 'production',
+        sameSite: 'lax',
+        domain: config.cookieDomain || undefined,
+        maxAge: 7 * 24 * 60 * 60 * 1000,
+      })
+
+      res.json({
+        access_token: accessToken,
+        user: { id: user.id, email: user.email, role: user.role },
+      })
+    } catch (error) {
+      logger.error('Login request failed', { error: (error as Error).message })
+      res.status(500).json({ error: 'Login is temporarily unavailable' })
     }
-
-    const ok = await verifyPassword(password, user.password_hash)
-    if (!ok) {
-      res.status(401).json({ error: 'Invalid credentials' })
-      return
-    }
-
-    const accessToken = signAccessToken({ id: user.id, email: user.email, role: user.role })
-    const refreshToken = signRefreshToken({ id: user.id, email: user.email, role: user.role })
-    const refreshHash = await hashToken(refreshToken)
-
-    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
-    await repo.createRefreshToken(user.id, refreshHash, expiresAt)
-    await repo.updateUserLastLogin(user.id)
-
-    res.cookie('refresh_token', refreshToken, {
-      httpOnly: true,
-      secure: config.nodeEnv === 'production',
-      sameSite: 'lax',
-      domain: config.cookieDomain || undefined,
-      maxAge: 7 * 24 * 60 * 60 * 1000,
-    })
-
-    res.json({
-      access_token: accessToken,
-      user: { id: user.id, email: user.email, role: user.role },
-    })
   }
 )
 

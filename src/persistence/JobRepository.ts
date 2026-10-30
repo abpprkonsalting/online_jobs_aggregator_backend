@@ -59,11 +59,21 @@ export class JobRepository implements IJobRepository {
   async createRefreshToken(userId: string, tokenHash: string, expiresAt: Date): Promise<void> {
     const id = crypto.randomUUID()
     const now = new Date()
-    await this.execute(
-      `INSERT INTO refresh_tokens (id, user_id, token_hash, active_token, expires_at, revoked_at, created_at)
-       VALUES (?, ?, ?, ?, ?, NULL, ?)`,
-      [id, userId, tokenHash, userId, expiresAt, now]
-    )
+    await this.transaction(async (conn) => {
+      // Serialize logins for this user so simultaneous requests cannot both
+      // claim the unique active_token value.
+      await conn.query(`SELECT id FROM users WHERE id = ? FOR UPDATE`, [userId])
+      await conn.execute(
+        `UPDATE refresh_tokens SET revoked_at = ?, active_token = NULL
+         WHERE user_id = ? AND revoked_at IS NULL`,
+        [now, userId]
+      )
+      await conn.execute(
+        `INSERT INTO refresh_tokens (id, user_id, token_hash, active_token, expires_at, revoked_at, created_at)
+         VALUES (?, ?, ?, ?, ?, NULL, ?)`,
+        [id, userId, tokenHash, userId, expiresAt, now]
+      )
+    })
   }
 
   async getRefreshTokenByUser(userId: string): Promise<any | null> {
