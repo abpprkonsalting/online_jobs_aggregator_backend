@@ -694,15 +694,18 @@ export class JobRepository implements IJobRepository {
 
     // Insert new jobs in one batch
     if (toInsert.length > 0) {
-      const valuePlaceholders = toInsert.map(() => '(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').join(', ')
-      const flatParams = toInsert.flat()
-      await this.execute(
-        `INSERT INTO jobs (id, source_id, external_id, title, organization, job_url, description_text,
-           allow_remote, salary_min, salary_max, salary_currency, salary_unit, date_posted, posted_at,
-           raw_data, fetched_at, content_hash, created_at, updated_at)
-          VALUES ${valuePlaceholders}`,
-        flatParams
-      )
+      const INSERT_CHUNK_SIZE = 100
+      const columns = '(id, source_id, external_id, title, organization, job_url, description_text, allow_remote, salary_min, salary_max, salary_currency, salary_unit, date_posted, posted_at, raw_data, fetched_at, content_hash, created_at, updated_at)'
+      const rowPlaceholders = '(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+      for (let i = 0; i < toInsert.length; i += INSERT_CHUNK_SIZE) {
+        const chunk = toInsert.slice(i, i + INSERT_CHUNK_SIZE)
+        const valuePlaceholders = chunk.map(() => rowPlaceholders).join(', ')
+        const flatParams = chunk.flat()
+        await this.execute(
+          `INSERT INTO jobs ${columns} VALUES ${valuePlaceholders}`,
+          flatParams
+        )
+      }
     }
 
     // Update changed jobs
