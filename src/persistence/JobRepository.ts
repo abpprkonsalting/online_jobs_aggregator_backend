@@ -706,7 +706,7 @@ export class JobRepository implements IJobRepository {
     if (toInsert.length > 0) {
       const INSERT_CHUNK_SIZE = 20
       const columns = '(id, source_id, external_id, title, organization, job_url, description_text, allow_remote, salary_min, salary_max, salary_currency, salary_unit, date_posted, posted_at, raw_data, fetched_at, content_hash, created_at, updated_at)'
-      const rowPlaceholders = '(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+      const rowPlaceholders = '(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
       for (let i = 0; i < toInsert.length; i += INSERT_CHUNK_SIZE) {
         const chunk = toInsert.slice(i, i + INSERT_CHUNK_SIZE)
         const valuePlaceholders = chunk.map(() => rowPlaceholders).join(', ')
