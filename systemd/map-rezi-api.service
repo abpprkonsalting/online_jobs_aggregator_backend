@@ -9,6 +9,7 @@ Group=map_rezi
 WorkingDirectory=/var/www/map_rezi/backend
 Environment=NODE_ENV=production
 Environment=LOG_DIR=/var/log/map_rezi
+Environment=LOGGERS=console,local
 Environment=CACHE_DIR=/var/lib/map_rezi
 ExecStart=/usr/bin/node dist/api/server.js
 Restart=always

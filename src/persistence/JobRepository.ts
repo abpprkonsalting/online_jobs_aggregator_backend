@@ -1,6 +1,7 @@
 import { RowDataPacket } from 'mysql2/promise'
 import type { IJobRepository } from './IJobRepository'
 import type { IDbDriver, IDbConnection, QueryResult } from '../database/IDbDriver'
+import { logger } from '../utils/logger'
 
 export class JobRepository implements IJobRepository {
   constructor(private driver: IDbDriver) {}
@@ -625,8 +626,14 @@ export class JobRepository implements IJobRepository {
     let jobsUpdated = 0
 
     if (data.length === 0) {
+      logger.debug('upsertJobsBatch: empty batch, nothing to persist')
       return { jobsNew: 0, jobsUpdated: 0, jobIds }
     }
+
+    logger.info(`upsertJobsBatch: received batch`, {
+      source_id: data[0].source_id,
+      batchSize: data.length,
+    })
 
     // Pre-fetch existing jobs for this batch
     const externalIds = data.map((d) => d.external_id)
@@ -693,6 +700,7 @@ export class JobRepository implements IJobRepository {
     }
 
     // Insert new jobs in one batch
+    let insertChunks = 0
     if (toInsert.length > 0) {
       const INSERT_CHUNK_SIZE = 20
       const columns = '(id, source_id, external_id, title, organization, job_url, description_text, allow_remote, salary_min, salary_max, salary_currency, salary_unit, date_posted, posted_at, raw_data, fetched_at, content_hash, created_at, updated_at)'
@@ -705,8 +713,16 @@ export class JobRepository implements IJobRepository {
           `INSERT INTO jobs ${columns} VALUES ${valuePlaceholders}`,
           flatParams
         )
+        insertChunks++
       }
     }
+
+    logger.info(`upsertJobsBatch: insert complete`, {
+      source_id: data[0].source_id,
+      jobsNew,
+      insertChunks,
+      jobsUpdated,
+    })
 
     // Update changed jobs
     for (const upd of toUpdate) {
@@ -720,6 +736,13 @@ export class JobRepository implements IJobRepository {
         upd.params
       )
     }
+
+    logger.info(`upsertJobsBatch: done`, {
+      source_id: data[0].source_id,
+      jobsNew,
+      jobsUpdated,
+      batchSize: data.length,
+    })
 
     return { jobsNew, jobsUpdated, jobIds }
   }

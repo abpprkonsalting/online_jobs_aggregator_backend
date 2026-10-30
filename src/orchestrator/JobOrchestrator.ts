@@ -560,11 +560,14 @@ export class JobOrchestrator {
 
   private async fetchFromAdapter(ctx: JobSourceContext, area: GeographicArea): Promise<any> {
     const codeId = ctx.source.codeId
+    logger.debug(`Looking up source adapter for source ${ctx.source.id} (${ctx.source.name})`, { codeId })
     if (!codeId) {
+      logger.error(`No code_id configured for source ${ctx.source.id} (${ctx.source.name}); registered adapter code_ids: ${this.registeredCodeIds()}`)
       throw new Error(`No source adapter registered for source ${ctx.source.id} (${ctx.source.name}) with code_id ${codeId}`)
     }
     const AdapterClass = this.sourceAdapters.get(codeId)
     if (!AdapterClass) {
+      logger.error(`No source adapter registered for code_id "${codeId}" (source ${ctx.source.id} / ${ctx.source.name}); registered adapter code_ids: ${this.registeredCodeIds()}`)
       throw new Error(`No source adapter registered for source ${ctx.source.id} (${ctx.source.name}) with code_id ${codeId}`)
     }
     const adapter = new (AdapterClass as new (ctx: JobSourceContext) => JobSource)(ctx)
@@ -581,11 +584,14 @@ export class JobOrchestrator {
 
   private async fetchFromAdapterByKeywords(ctx: JobSourceContext, keywords: string[]): Promise<any> {
     const codeId = ctx.source.codeId
+    logger.debug(`Looking up source adapter for source ${ctx.source.id} (${ctx.source.name})`, { codeId, keywords })
     if (!codeId) {
+      logger.error(`No code_id configured for source ${ctx.source.id} (${ctx.source.name}); registered adapter code_ids: ${this.registeredCodeIds()}`)
       throw new Error(`No source adapter registered for source ${ctx.source.id} (${ctx.source.name}) with code_id ${codeId}`)
     }
     const AdapterClass = this.sourceAdapters.get(codeId)
     if (!AdapterClass) {
+      logger.error(`No source adapter registered for code_id "${codeId}" (source ${ctx.source.id} / ${ctx.source.name}); registered adapter code_ids: ${this.registeredCodeIds()}`)
       throw new Error(`No source adapter registered for source ${ctx.source.id} (${ctx.source.name}) with code_id ${codeId}`)
     }
     const adapter = new (AdapterClass as new (ctx: JobSourceContext) => JobSource)(ctx)
@@ -633,6 +639,11 @@ export class JobOrchestrator {
         logger.warn(`No source adapter registered for source ${source.id} (${source.name}) with code_id ${source.codeId}`)
       }
     }
+
+    logger.info('Sources loaded', {
+      sourceCount: filtered.length,
+      sources: filtered.map((s) => ({ id: s.id, name: s.name, codeId: s.codeId, enabled: s.enabled })),
+    })
 
     return filtered
   }
@@ -703,6 +714,11 @@ export class JobOrchestrator {
         }
       }
     }
+
+    logger.info('Source adapter discovery complete', {
+      adapterCount: this.sourceAdapters.size,
+      codeIds: Array.from(this.sourceAdapters.keys()),
+    })
   }
 
   private getRateLimiter(source: SourceConfig): ReturnType<typeof createRateLimiter> {
@@ -711,6 +727,11 @@ export class JobOrchestrator {
     const limiter = createRateLimiter(source.config)
     this.rateLimiters.set(source.id, limiter)
     return limiter
+  }
+
+  private registeredCodeIds(): string {
+    const ids = Array.from(this.sourceAdapters.keys())
+    return ids.length > 0 ? ids.join(', ') : '(none)'
   }
 
   private childLogger(sourceId: string, areaId: string): any {

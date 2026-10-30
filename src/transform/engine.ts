@@ -101,6 +101,8 @@ export class TransformEngine {
     const warnings: string[] = []
     const allEntities: Array<{ entity: string; table: string; matchBy: Record<string, unknown>; data: Record<string, unknown> }> = []
 
+    this.logger.info(`Transform engine started for source ${this.sourceId}`, { rawJobs: rawJobs.length })
+
     // Prepare job records for batch processing
     const jobRecords: Array<{
       record: Record<string, unknown>
@@ -221,6 +223,13 @@ export class TransformEngine {
     }
     jobsSavedNew = upsertResult.jobsNew
     jobsSavedUpdated = upsertResult.jobsUpdated
+
+    this.logger.info(`Transform engine finished for source ${this.sourceId}`, {
+      jobsFound,
+      jobsSavedNew,
+      jobsSavedUpdated,
+      warnings: warnings.length,
+    })
 
     // Build jobId map for child entity sync
     const jobIdMap = upsertResult.jobIds
