@@ -4,7 +4,7 @@ dotenv.config()
 
 function required(name: string, fallback?: string): string {
   const v = process.env[name] ?? fallback
-  if (v === undefined) {
+  if (v === undefined || v.trim() === '') {
     throw new Error(`Missing required env var: ${name}`)
   }
   return v
@@ -50,6 +50,16 @@ interface Config {
   adminEmail: string
   adminPassword: string
   dbPoolLimit: number
+  googleMapsApiKey: string
+  notificationChannels: string[]
+  smtpHost: string
+  smtpPort: number
+  smtpUsername: string
+  smtpPassword: string
+  smtpFromEmail: string
+  openAiApiKey: string
+  aiDedupProvider: string
+  aiDedupModel: string
 }
 
 let cachedConfig: Config | null = null
@@ -81,6 +91,16 @@ export function getConfig(): Config {
     adminEmail: required('ADMIN_EMAIL'),
     adminPassword: required('ADMIN_PASSWORD'),
     dbPoolLimit: num('DB_POOL_LIMIT', 10),
+    googleMapsApiKey: required('GOOGLE_MAPS_API_KEY'),
+    notificationChannels: (process.env.NOTIFICATION_CHANNELS ?? '').split(',').map((s) => s.trim().toLowerCase()).filter(Boolean),
+    smtpHost: process.env.SMTP_HOST ?? 'smtp.gmail.com',
+    smtpPort: num('SMTP_PORT', 465),
+    smtpUsername: process.env.SMTP_USERNAME ?? '',
+    smtpPassword: process.env.SMTP_PASSWORD ?? '',
+    smtpFromEmail: process.env.SMTP_FROM_EMAIL ?? '',
+    openAiApiKey: process.env.OPENAI_API_KEY ?? '',
+    aiDedupProvider: process.env.AI_DEDUP_PROVIDER ?? 'openai',
+    aiDedupModel: process.env.AI_DEDUP_MODEL ?? 'gpt-4o-mini',
   }
   return cachedConfig
 }
