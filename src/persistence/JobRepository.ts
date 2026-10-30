@@ -619,15 +619,16 @@ export class JobRepository implements IJobRepository {
     raw_data?: Record<string, unknown> | null
     fetched_at?: Date | null
     content_hash?: string | null
-  }>): Promise<{ jobsNew: number; jobsUpdated: number; jobIds: Map<string, string> }> {
+  }>): Promise<{ jobsNew: number; jobsUpdated: number; jobIds: Map<string, string>; newJobIds: string[] }> {
     const now = new Date()
     const jobIds = new Map<string, string>()
+    const newJobIds: string[] = []
     let jobsNew = 0
     let jobsUpdated = 0
 
     if (data.length === 0) {
       logger.debug('upsertJobsBatch: empty batch, nothing to persist')
-      return { jobsNew: 0, jobsUpdated: 0, jobIds }
+      return { jobsNew: 0, jobsUpdated: 0, jobIds, newJobIds }
     }
 
     logger.info(`upsertJobsBatch: received batch`, {
@@ -695,6 +696,7 @@ export class JobRepository implements IJobRepository {
       } else {
         jobsNew++
         jobIds.set(d.external_id, d.id)
+        newJobIds.push(d.id)
         toInsert.push(params)
       }
     }
@@ -744,7 +746,24 @@ export class JobRepository implements IJobRepository {
       batchSize: data.length,
     })
 
-    return { jobsNew, jobsUpdated, jobIds }
+    return { jobsNew, jobsUpdated, jobIds, newJobIds }
+  }
+
+  async findCrossSourceCandidates(data: { source_id: string; title: string; organization?: string | null; job_url: string }): Promise<any[]> {
+    return this.query<any>(
+      `SELECT id, source_id, external_id, title, organization, job_url
+       FROM jobs WHERE source_id <> ? AND (job_url = ? OR (LOWER(title) = LOWER(?) AND LOWER(COALESCE(organization, '')) = LOWER(COALESCE(?, ''))))
+       ORDER BY (job_url = ?) DESC LIMIT 20`,
+      [data.source_id, data.job_url, data.title, data.organization ?? '', data.job_url],
+    )
+  }
+
+  async linkJobSourceAlias(sourceId: string, externalId: string, jobId: string): Promise<void> {
+    await this.execute(
+      `INSERT INTO job_source_aliases (source_id, external_id, job_id, created_at) VALUES (?, ?, ?, ?)
+       ON DUPLICATE KEY UPDATE job_id = VALUES(job_id)`,
+      [sourceId, externalId, jobId, new Date()],
+    )
   }
 
   async syncJobSkills(jobId: string, skillIds: string[]): Promise<void> {
@@ -791,6 +810,34 @@ export class JobRepository implements IJobRepository {
 
   async syncLocationsBatch(jobId: string, locations: Array<{ city_id?: string | null; raw_text?: string | null }>): Promise<void> {
     return this.syncLocations(jobId, locations)
+  }
+
+  async mergeJobAssociations(
+    jobId: string,
+    skillIds: string[],
+    categoryPairs: Array<{ category_id: string; classification_confidence?: number | null }>,
+    locations: Array<{ city_id?: string | null; raw_text?: string | null }>,
+  ): Promise<void> {
+    if (skillIds.length) {
+      const values = skillIds.map(() => '(?, ?)').join(', ')
+      await this.execute(`INSERT IGNORE INTO job_skills (job_id, skill_id) VALUES ${values}`, skillIds.flatMap((id) => [jobId, id]))
+    }
+    if (categoryPairs.length) {
+      const values = categoryPairs.map(() => '(?, ?, ?)').join(', ')
+      await this.execute(
+        `INSERT IGNORE INTO job_categories (job_id, category_id, classification_confidence) VALUES ${values}`,
+        categoryPairs.flatMap((pair) => [jobId, pair.category_id, pair.classification_confidence ?? null]),
+      )
+    }
+    for (const location of locations) {
+      await this.execute(
+        `INSERT INTO locations (id, job_id, city_id, raw_text, created_at, updated_at)
+         SELECT ?, ?, ?, ?, ?, ? WHERE NOT EXISTS (
+           SELECT 1 FROM locations WHERE job_id = ? AND city_id <=> ? AND raw_text <=> ?
+         )`,
+        [crypto.randomUUID(), jobId, location.city_id ?? null, location.raw_text ?? null, new Date(), new Date(), jobId, location.city_id ?? null, location.raw_text ?? null],
+      )
+    }
   }
 
   async getJobWithDetails(jobId: string): Promise<any | null> {

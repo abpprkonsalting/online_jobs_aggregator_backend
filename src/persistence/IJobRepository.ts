@@ -159,7 +159,9 @@ export interface IJobRepository {
   getJobDetails(jobId: string): Promise<any | null>
   getJobWithDetails(jobId: string): Promise<any | null>
   upsertJob(data: JobRecord): Promise<{ id: string; isNew: boolean }>
-  upsertJobsBatch(data: JobRecord[]): Promise<{ jobsNew: number; jobsUpdated: number; jobIds: Map<string, string> }>
+  upsertJobsBatch(data: JobRecord[]): Promise<{ jobsNew: number; jobsUpdated: number; jobIds: Map<string, string>; newJobIds: string[] }>
+  findCrossSourceCandidates(data: JobRecord): Promise<JobRecord[]>
+  linkJobSourceAlias(sourceId: string, externalId: string, jobId: string): Promise<void>
 
   // Job associations
   syncJobSkills(jobId: string, skillIds: string[]): Promise<void>
@@ -168,6 +170,7 @@ export interface IJobRepository {
   syncJobSkillsBatch(jobId: string, skillIds: string[]): Promise<void>
   syncJobCategoriesBatch(jobId: string, categoryPairs: Array<{ category_id: string; classification_confidence?: number | null }>): Promise<void>
   syncLocationsBatch(jobId: string, locations: LocationData[]): Promise<void>
+  mergeJobAssociations(jobId: string, skillIds: string[], categoryPairs: Array<{ category_id: string; classification_confidence?: number | null }>, locations: LocationData[]): Promise<void>
 
   // Sources
   listSources(): Promise<any[]>
